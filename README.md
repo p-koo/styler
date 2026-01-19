@@ -58,20 +58,20 @@ Styler uses a multi-agent architecture where specialized agents collaborate to p
           │         └─────────┬───────────┘
           │                   │
           ▼                   ▼
-┌───────────────────────────────────────────────────────────────┐
-│                     Orchestrator Agent                        │
-│              Coordinates the edit-critique loop               │
-│                                                               │
-│  ┌─────────────┐      ┌─────────┐      ┌──────────────┐      │
-│  │Prompt Agent │ ───▶ │  LLM    │ ───▶ │Critique Agent│      │
-│  │             │      │ (edit)  │      │              │      │
-│  │Builds style-│      └─────────┘      │Evaluates     │      │
-│  │aware prompt │                       │alignment     │      │
-│  └─────────────┘                       └──────┬───────┘      │
-│        ▲                                      │              │
-│        │           Refine if needed           │              │
-│        └──────────────────────────────────────┘              │
-└───────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                    Orchestrator Agent                       │
+│             Coordinates the edit-critique loop              │
+│                                                             │
+│  ┌─────────────┐    ┌─────────┐    ┌──────────────┐        │
+│  │Prompt Agent │───▶│  LLM    │───▶│Critique Agent│        │
+│  │             │    │ (edit)  │    │              │        │
+│  │Builds style-│    └─────────┘    │Evaluates     │        │
+│  │aware prompt │                   │alignment     │        │
+│  └─────────────┘                   └──────┬───────┘        │
+│        ▲                                  │                │
+│        │         Refine if needed         │                │
+│        └──────────────────────────────────┘                │
+└─────────────────────────────────────────────────────────────┘
                             │
                             ▼
                    ┌─────────────────┐

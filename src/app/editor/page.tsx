@@ -1268,13 +1268,23 @@ export default function EditorPage() {
             {/* Search */}
             {document && (
               <div className="flex items-center gap-1">
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search..."
-                  className="w-32 px-2 py-1 text-sm border border-[var(--border)] rounded bg-[var(--background)]"
-                />
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search..."
+                    className="w-32 px-2 py-1 pr-6 text-sm border border-[var(--border)] rounded bg-[var(--background)]"
+                  />
+                  {searchQuery && (
+                    <button
+                      onClick={() => setSearchQuery('')}
+                      className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)] hover:text-[var(--foreground)] text-sm"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
                 {searchResults.length > 0 && (
                   <>
                     <span className="text-xs text-[var(--muted-foreground)]">

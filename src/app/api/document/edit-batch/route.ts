@@ -151,7 +151,16 @@ export async function POST(request: NextRequest) {
     contextParts.push('');
     contextParts.push(`EDIT INSTRUCTION: ${instruction || 'Improve and restructure these paragraphs for better flow and clarity.'}`);
     contextParts.push('');
-    contextParts.push('Return ONLY the edited text. Separate paragraphs with blank lines. Do not include paragraph numbers, explanations, or commentary.');
+    contextParts.push('CRITICAL FORMATTING REQUIREMENT:');
+    contextParts.push('- Return ONLY the edited text');
+    contextParts.push('- You MUST separate each paragraph with the marker: <<<PARAGRAPH_BREAK>>>');
+    contextParts.push('- Do NOT include paragraph numbers, explanations, or commentary');
+    contextParts.push('- Example output format:');
+    contextParts.push('First paragraph text here.');
+    contextParts.push('<<<PARAGRAPH_BREAK>>>');
+    contextParts.push('Second paragraph text here.');
+    contextParts.push('<<<PARAGRAPH_BREAK>>>');
+    contextParts.push('Third paragraph text here.');
 
     const systemPrompt = contextParts.join('\n');
 
@@ -187,6 +196,16 @@ export async function POST(request: NextRequest) {
         (editedText.startsWith("'") && editedText.endsWith("'"))) {
       editedText = editedText.slice(1, -1);
     }
+
+    // Convert paragraph markers to double newlines for frontend parsing
+    editedText = editedText.replace(/<<<PARAGRAPH_BREAK>>>/g, '\n\n');
+
+    // Clean up any excessive whitespace but preserve double newlines
+    editedText = editedText
+      .split('\n\n')
+      .map(p => p.trim())
+      .filter(p => p.length > 0)
+      .join('\n\n');
 
     return NextResponse.json({
       editedText,

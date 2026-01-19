@@ -563,6 +563,104 @@ export default function EditorPage() {
     setLastSelectedIndex(null);
   }, []);
 
+  // Request edit with specific parameters (used by feedback panel Apply button)
+  const handleRequestEditDirect = useCallback(async (paragraphIndices: number[], instruction: string) => {
+    if (!document || paragraphIndices.length === 0) return;
+
+    const selectedIndices = [...paragraphIndices].sort((a, b) => a - b);
+    const isMultiple = selectedIndices.length > 1;
+
+    // Update selection to show which paragraphs are being edited
+    setSelectedParagraphs(new Set(paragraphIndices));
+    setEditInstruction(instruction);
+    setIsLoading(true);
+
+    try {
+      if (isMultiple) {
+        const res = await fetch('/api/document/edit-batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            paragraphs: document.paragraphs.map((p) => p.content),
+            selectedIndices,
+            instruction,
+            profileId: activeProfile,
+            documentStructure: document.structure,
+            model: selectedModel || undefined,
+          }),
+        });
+
+        if (!res.ok) throw new Error('Failed to get edit');
+
+        const data = await res.json();
+
+        setDocument((prev) => {
+          if (!prev) return null;
+          const updated = { ...prev };
+          updated.paragraphs = [...prev.paragraphs];
+
+          const originalCombined = selectedIndices
+            .map((i) => prev.paragraphs[i]?.content || '')
+            .join('\n\n');
+
+          const firstIndex = selectedIndices[0];
+          updated.paragraphs[firstIndex] = {
+            ...updated.paragraphs[firstIndex],
+            edited: data.editedText,
+            originalBatchContent: originalCombined,
+          };
+          return updated;
+        });
+      } else {
+        const paragraphIndex = selectedIndices[0];
+        const res = await fetch('/api/document/edit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            paragraphs: document.paragraphs.map((p) => p.content),
+            paragraphIndex,
+            instruction,
+            profileId: activeProfile,
+            documentStructure: document.structure,
+            model: selectedModel || undefined,
+            documentId: document.id,
+            includeCritique: true,
+          }),
+        });
+
+        if (!res.ok) throw new Error('Failed to get edit');
+
+        const data = await res.json();
+
+        setDocument((prev) => {
+          if (!prev) return null;
+          const updated = { ...prev };
+          updated.paragraphs = [...prev.paragraphs];
+          updated.paragraphs[paragraphIndex] = {
+            ...updated.paragraphs[paragraphIndex],
+            edited: data.editedText,
+            critique: data.critique,
+            iterations: data.iterations,
+            convergenceHistory: data.convergenceHistory,
+            documentProfileApplied: data.documentPreferences?.applied,
+          };
+          return updated;
+        });
+      }
+
+      // Scroll to show the edit
+      const element = window.document.getElementById(`paragraph-${selectedIndices[0]}`);
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    } catch (error) {
+      console.error('Edit request failed:', error);
+      alert('Failed to get edit suggestion');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [document, activeProfile, selectedModel]);
+
   // Request edit for selected paragraphs
   const handleRequestEdit = useCallback(async () => {
     if (!document || selectedParagraphs.size === 0) return;
@@ -2193,17 +2291,10 @@ export default function EditorPage() {
                 }
               }}
               onRequestEdit={(paragraphIndices, instruction) => {
-                // Select the target paragraphs
-                setSelectedParagraphs(new Set(paragraphIndices));
-                // Set the edit instruction
-                setEditInstruction(instruction);
-                // Close feedback panel to show the edit panel
+                // Close feedback panel first to show the document
                 setShowFeedbackPanel(false);
-                // Scroll to first paragraph
-                const element = window.document.getElementById(`paragraph-${paragraphIndices[0]}`);
-                if (element) {
-                  element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                }
+                // Request the edit directly (this handles selection, loading, and API call)
+                handleRequestEditDirect(paragraphIndices, instruction);
               }}
             />
           </aside>

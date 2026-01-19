@@ -48,6 +48,11 @@ export default function Home() {
             description="A coordinated system of AI agents works together: Prompt Agent builds context, LLM generates edits, and Critique Agent ensures quality."
           />
           <FeatureCard
+            icon="📋"
+            title="Document Review"
+            description="Get high-level feedback on your document or sections. Specify goals, focus on areas like clarity or flow, and apply suggestions directly."
+          />
+          <FeatureCard
             icon="📊"
             title="Audience Profiles"
             description="Create different profiles for various contexts—academic journals, grant proposals, technical blogs—each with tailored style settings."
@@ -56,6 +61,11 @@ export default function Home() {
             icon="🔄"
             title="Continuous Adaptation"
             description="The system learns from your accept/reject decisions, continuously improving its suggestions to match your preferences."
+          />
+          <FeatureCard
+            icon="✨"
+            title="Syntax Highlighting"
+            description="Auto-detects LaTeX and Markdown syntax. Colors commands, math, headings, and code blocks for easier editing."
           />
         </div>
 

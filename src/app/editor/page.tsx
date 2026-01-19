@@ -6,6 +6,7 @@ import dynamic from 'next/dynamic';
 import DiffView, { SideBySideDiff, type FeedbackType } from '@/components/DiffView';
 import CritiqueBadge from '@/components/CritiqueBadge';
 import DocumentProfilePanel from '@/components/DocumentProfilePanel';
+import FeedbackPanel, { type FeedbackPanelState, DEFAULT_FEEDBACK_STATE } from '@/components/FeedbackPanel';
 import AgentVisualization from '@/components/AgentVisualization';
 import SyntaxHighlighter, { type HighlightMode } from '@/components/SyntaxHighlighter';
 import type { AudienceProfile, CritiqueAnalysis } from '@/types';
@@ -143,6 +144,8 @@ export default function EditorPage() {
   const [darkMode, setDarkMode] = useState<'system' | 'light' | 'dark'>('system'); // Theme preference
   const [editorMode, setEditorMode] = useState<HighlightMode>('plain'); // Syntax highlighting mode
   const [showNavMenu, setShowNavMenu] = useState(false); // Navigation dropdown
+  const [showFeedbackPanel, setShowFeedbackPanel] = useState(false); // Document review/feedback panel
+  const [feedbackPanelState, setFeedbackPanelState] = useState<FeedbackPanelState>(DEFAULT_FEEDBACK_STATE); // Persisted feedback panel state
   const navMenuRef = useRef<HTMLDivElement>(null);
   const [searchQuery, setSearchQuery] = useState(''); // Document search
   const [searchResults, setSearchResults] = useState<number[]>([]); // Paragraph indices with matches
@@ -578,7 +581,7 @@ export default function EditorPage() {
           body: JSON.stringify({
             paragraphs: document.paragraphs.map((p) => p.content),
             selectedIndices,
-            instruction: editInstruction || 'Improve flow and coherence across these paragraphs',
+            instruction: editInstruction || 'Improve logical flow and coherence, rearranging if needed',
             profileId: activeProfile,
             documentStructure: document.structure,
             model: selectedModel || undefined,
@@ -940,6 +943,7 @@ export default function EditorPage() {
     setDocument(null);
     setSelectedParagraphs(new Set());
     setLastSelectedIndex(null);
+    setFeedbackPanelState(DEFAULT_FEEDBACK_STATE); // Reset feedback panel
   }, []);
 
   // Create new blank document
@@ -953,6 +957,7 @@ export default function EditorPage() {
     setSelectedParagraphs(new Set());
     setLastSelectedIndex(null);
     setEditorMode('plain'); // Reset to plain for new document
+    setFeedbackPanelState(DEFAULT_FEEDBACK_STATE); // Reset feedback panel
     setShowAIGenerate(true); // Show AI panel to help start
   }, []);
 
@@ -1242,8 +1247,8 @@ export default function EditorPage() {
                 onClick={() => setShowNavMenu(!showNavMenu)}
                 className="flex items-center gap-2 hover:opacity-80 transition-opacity"
               >
-                <img src="/logo.png" alt="Styler" className="h-8 w-8" />
-                <span className="text-xl font-semibold">Styler</span>
+                <img src="/logo.png" alt="AgentStyler" className="h-8 w-8" />
+                <span className="text-xl font-semibold">AgentStyler</span>
                 <svg
                   className={`w-4 h-4 text-[var(--muted-foreground)] transition-transform ${showNavMenu ? 'rotate-180' : ''}`}
                   fill="none"
@@ -1430,6 +1435,19 @@ export default function EditorPage() {
                   title="Document Profile"
                 >
                   📋
+                </button>
+
+                {/* Document Review/Feedback */}
+                <button
+                  onClick={() => setShowFeedbackPanel(!showFeedbackPanel)}
+                  className={`p-2 rounded-lg border ${
+                    showFeedbackPanel
+                      ? 'border-blue-500 bg-blue-50 text-blue-600'
+                      : 'border-[var(--border)] hover:bg-[var(--muted)]'
+                  }`}
+                  title="Get Document Feedback"
+                >
+                  💬
                 </button>
 
                 {/* Export */}
@@ -1933,16 +1951,23 @@ export default function EditorPage() {
                           }
                           className="w-full h-24 p-3 border border-[var(--border)] rounded-lg bg-[var(--background)] resize-none text-sm"
                         />
-                        {/* Quick templates */}
+                        {/* Quick templates - different for single vs multiple paragraphs */}
                         <div className="flex flex-wrap gap-1 mt-2">
-                          {[
+                          {(isMultiple ? [
+                            'Make concise',
+                            'Improve clarity',
+                            'Improve logical flow',
+                            'Strengthen transitions',
+                            'Merge ideas',
+                            'Reduce redundancy',
+                          ] : [
                             'Make concise',
                             'Fix grammar',
                             'Improve clarity',
                             'Add hedging',
                             'More formal',
                             'Simplify',
-                          ].map((template) => (
+                          ]).map((template) => (
                             <button
                               key={template}
                               onClick={() => setEditInstruction(template)}
@@ -2144,6 +2169,44 @@ export default function EditorPage() {
               baseProfileName={profiles.find(p => p.id === activeProfile)?.name}
               profiles={profiles}
               onClose={() => setShowDocProfile(false)}
+            />
+          </aside>
+        )}
+
+        {/* Feedback/Review Panel */}
+        {document && showFeedbackPanel && (
+          <aside className="w-96 border-l border-[var(--border)] bg-[var(--background)] flex flex-col overflow-hidden">
+            <FeedbackPanel
+              paragraphs={document.paragraphs.map(p => p.content)}
+              selectedIndices={Array.from(selectedParagraphs)}
+              documentStructure={document.structure}
+              savedState={feedbackPanelState}
+              onStateChange={setFeedbackPanelState}
+              onClose={() => setShowFeedbackPanel(false)}
+              onScrollToParagraph={(index) => {
+                // Scroll to paragraph and highlight it
+                const element = window.document.getElementById(`paragraph-${index}`);
+                if (element) {
+                  element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  element.classList.add('ring-2', 'ring-blue-400');
+                  setTimeout(() => {
+                    element.classList.remove('ring-2', 'ring-blue-400');
+                  }, 2000);
+                }
+              }}
+              onRequestEdit={(paragraphIndices, instruction) => {
+                // Select the target paragraphs
+                setSelectedParagraphs(new Set(paragraphIndices));
+                // Set the edit instruction
+                setEditInstruction(instruction);
+                // Close feedback panel to show the edit panel
+                setShowFeedbackPanel(false);
+                // Scroll to first paragraph
+                const element = window.document.getElementById(`paragraph-${paragraphIndices[0]}`);
+                if (element) {
+                  element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+              }}
             />
           </aside>
         )}

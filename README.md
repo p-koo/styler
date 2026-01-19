@@ -1,11 +1,12 @@
-<p align="center">
-  <img src="public/logo.png" alt="Styler Logo" width="150">
-</p>
+<table align="center" border="0" cellspacing="0" cellpadding="0">
+  <tr>
+    <td><img src="public/logo.png" alt="Styler Logo" width="100"></td>
+    <td><h1>Styler</h1></td>
+  </tr>
+</table>
 
-<h1 align="center">Styler</h1>
-
 <p align="center">
-  An agentic AI system for document editing that learns and applies your personal writing style.<br>
+  <strong>An agentic AI system for document editing that learns and applies your personal writing style.</strong><br>
   Designed for researchers, academics, and professionals who need consistent, high-quality writing assistance for papers, grants, and technical documents.
 </p>
 

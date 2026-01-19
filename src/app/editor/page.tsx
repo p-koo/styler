@@ -95,6 +95,11 @@ export default function EditorPage() {
   const [futureStates, setFutureStates] = useState<Array<{ paragraphs: Paragraph[]; description: string }>>([]); // For redo
   const [showDocProfile, setShowDocProfile] = useState(true); // Document profile panel - visible by default
   const [showAgentViz, setShowAgentViz] = useState(false); // Agent visualization toggle
+  const [darkMode, setDarkMode] = useState<'system' | 'light' | 'dark'>('system'); // Theme preference
+  const [searchQuery, setSearchQuery] = useState(''); // Document search
+  const [searchResults, setSearchResults] = useState<number[]>([]); // Paragraph indices with matches
+  const [currentSearchIndex, setCurrentSearchIndex] = useState(0); // Current match navigation
+  const [compareVersions, setCompareVersions] = useState<[string | null, string | null]>([null, null]); // Version IDs to compare
 
   // Load history when document changes
   useEffect(() => {
@@ -155,6 +160,76 @@ export default function EditorPage() {
   const handleModelChange = (model: string) => {
     setSelectedModel(model);
     localStorage.setItem(MODEL_STORAGE_KEY, model);
+  };
+
+  // Load and apply dark mode preference
+  useEffect(() => {
+    const saved = localStorage.getItem('theme-preference') as 'system' | 'light' | 'dark' | null;
+    if (saved) {
+      setDarkMode(saved);
+    }
+  }, []);
+
+  // Apply dark mode class to document
+  useEffect(() => {
+    const root = window.document.documentElement;
+    root.classList.remove('dark', 'light');
+    if (darkMode === 'dark') {
+      root.classList.add('dark');
+    } else if (darkMode === 'light') {
+      root.classList.add('light');
+    }
+    localStorage.setItem('theme-preference', darkMode);
+  }, [darkMode]);
+
+  // Cycle through theme modes
+  const cycleTheme = () => {
+    setDarkMode((prev) => {
+      if (prev === 'system') return 'light';
+      if (prev === 'light') return 'dark';
+      return 'system';
+    });
+  };
+
+  // Search within document
+  useEffect(() => {
+    if (!searchQuery.trim() || !document) {
+      setSearchResults([]);
+      setCurrentSearchIndex(0);
+      return;
+    }
+    const query = searchQuery.toLowerCase();
+    const matches = document.paragraphs
+      .map((p, idx) => (p.content.toLowerCase().includes(query) ? idx : -1))
+      .filter((idx) => idx !== -1);
+    setSearchResults(matches);
+    setCurrentSearchIndex(0);
+  }, [searchQuery, document]);
+
+  // Navigate to next/prev search result
+  const navigateSearch = (direction: 'next' | 'prev') => {
+    if (searchResults.length === 0) return;
+    let newIndex = currentSearchIndex;
+    if (direction === 'next') {
+      newIndex = (currentSearchIndex + 1) % searchResults.length;
+    } else {
+      newIndex = (currentSearchIndex - 1 + searchResults.length) % searchResults.length;
+    }
+    setCurrentSearchIndex(newIndex);
+    // Scroll to the paragraph
+    const paraEl = window.document.getElementById(`para-${searchResults[newIndex]}`);
+    paraEl?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+
+  // Toggle version selection for comparison
+  const toggleVersionCompare = (snapshotId: string) => {
+    setCompareVersions(([v1, v2]) => {
+      if (v1 === snapshotId) return [null, v2];
+      if (v2 === snapshotId) return [v1, null];
+      if (!v1) return [snapshotId, v2];
+      if (!v2) return [v1, snapshotId];
+      return [snapshotId, null]; // Replace first if both selected
+    });
   };
 
   // Update document title
@@ -1190,6 +1265,49 @@ export default function EditorPage() {
                 </button>
               </>
             )}
+            {/* Search */}
+            {document && (
+              <div className="flex items-center gap-1">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search..."
+                  className="w-32 px-2 py-1 text-sm border border-[var(--border)] rounded bg-[var(--background)]"
+                />
+                {searchResults.length > 0 && (
+                  <>
+                    <span className="text-xs text-[var(--muted-foreground)]">
+                      {currentSearchIndex + 1}/{searchResults.length}
+                    </span>
+                    <button
+                      onClick={() => navigateSearch('prev')}
+                      className="p-1 text-xs hover:bg-[var(--muted)] rounded"
+                    >
+                      ▲
+                    </button>
+                    <button
+                      onClick={() => navigateSearch('next')}
+                      className="p-1 text-xs hover:bg-[var(--muted)] rounded"
+                    >
+                      ▼
+                    </button>
+                  </>
+                )}
+                {searchQuery && searchResults.length === 0 && (
+                  <span className="text-xs text-red-500">No matches</span>
+                )}
+              </div>
+            )}
+            <button
+              onClick={cycleTheme}
+              className="p-2 rounded-lg hover:bg-[var(--muted)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+              title={`Theme: ${darkMode}`}
+            >
+              {darkMode === 'light' && '☀️'}
+              {darkMode === 'dark' && '🌙'}
+              {darkMode === 'system' && '💻'}
+            </button>
             <a
               href="/settings"
               className="text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
@@ -1413,13 +1531,21 @@ export default function EditorPage() {
               )}
 
               {document.paragraphs.map((para, index) => {
+                const isSearchMatch = searchResults.includes(index);
+                const isCurrentSearchMatch = searchResults[currentSearchIndex] === index;
                 return (
-                  <div key={para.id}>
+                  <div key={para.id} id={`para-${index}`}>
                     <div
                       data-para-index={index}
                       className={`relative group ${
                         selectedParagraphs.has(index)
                           ? 'ring-2 ring-[var(--primary)] rounded-lg'
+                          : ''
+                      } ${
+                        isCurrentSearchMatch
+                          ? 'bg-yellow-200 dark:bg-yellow-900/50 rounded-lg'
+                          : isSearchMatch
+                          ? 'bg-yellow-100 dark:bg-yellow-900/30 rounded-lg'
                           : ''
                       }`}
                     >
@@ -1651,6 +1777,25 @@ export default function EditorPage() {
                           }
                           className="w-full h-24 p-3 border border-[var(--border)] rounded-lg bg-[var(--background)] resize-none text-sm"
                         />
+                        {/* Quick templates */}
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {[
+                            'Make concise',
+                            'Fix grammar',
+                            'Improve clarity',
+                            'Add hedging',
+                            'More formal',
+                            'Simplify',
+                          ].map((template) => (
+                            <button
+                              key={template}
+                              onClick={() => setEditInstruction(template)}
+                              className="px-2 py-0.5 text-xs border border-[var(--border)] rounded hover:bg-[var(--muted)]"
+                            >
+                              {template}
+                            </button>
+                          ))}
+                        </div>
                       </div>
 
                       <div className="text-xs text-[var(--muted-foreground)]">
@@ -1723,9 +1868,57 @@ export default function EditorPage() {
                 </button>
               </div>
               <p className="text-xs text-[var(--muted-foreground)] mt-1">
-                Click a version to preview, then revert if desired
+                Check two versions to compare, or click Revert
               </p>
             </div>
+
+            {/* Compare diff view */}
+            {compareVersions[0] && compareVersions[1] && history && (() => {
+              const v1 = history.snapshots.find(s => s.id === compareVersions[0]);
+              const v2 = history.snapshots.find(s => s.id === compareVersions[1]);
+              if (!v1 || !v2) return null;
+              const text1 = v1.paragraphs.map(p => p.content).join('\n\n');
+              const text2 = v2.paragraphs.map(p => p.content).join('\n\n');
+              return (
+                <div className="p-3 border-b border-[var(--border)] bg-yellow-50 dark:bg-yellow-900/20">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-medium">Comparing versions</span>
+                    <button
+                      onClick={() => setCompareVersions([null, null])}
+                      className="text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                  <div className="text-xs space-y-1 max-h-40 overflow-y-auto">
+                    <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded">
+                      <strong>Older:</strong> {v1.changeDescription}
+                      <br />
+                      <span className="text-[var(--muted-foreground)]">{v1.paragraphs.length} paragraphs</span>
+                    </div>
+                    <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded">
+                      <strong>Newer:</strong> {v2.changeDescription}
+                      <br />
+                      <span className="text-[var(--muted-foreground)]">{v2.paragraphs.length} paragraphs</span>
+                    </div>
+                    <div className="p-2 bg-[var(--background)] rounded border border-[var(--border)]">
+                      <strong>Diff:</strong>
+                      <br />
+                      {text1 === text2 ? (
+                        <span className="text-[var(--muted-foreground)]">No differences</span>
+                      ) : (
+                        <span>
+                          {Math.abs(v2.paragraphs.length - v1.paragraphs.length) > 0 && (
+                            <span className="block">Paragraphs: {v1.paragraphs.length} → {v2.paragraphs.length}</span>
+                          )}
+                          <span className="block">Words: {text1.split(/\s+/).length} → {text2.split(/\s+/).length}</span>
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
 
             <div className="flex-1 overflow-y-auto">
               {(!history || history.snapshots.length === 0) ? (
@@ -1734,37 +1927,47 @@ export default function EditorPage() {
                 </div>
               ) : (
                 <div className="divide-y divide-[var(--border)]">
-                  {history.snapshots.map((snapshot, idx) => (
-                    <div
-                      key={snapshot.id}
-                      className="p-3 hover:bg-[var(--muted)] cursor-pointer group"
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">
-                            {snapshot.changeDescription}
-                          </p>
-                          <p className="text-xs text-[var(--muted-foreground)]">
-                            {formatTimestamp(snapshot.timestamp)}
-                          </p>
-                          <p className="text-xs text-[var(--muted-foreground)]">
-                            {snapshot.paragraphs.length} paragraphs
-                          </p>
+                  {history.snapshots.map((snapshot, idx) => {
+                    const isSelected = compareVersions.includes(snapshot.id);
+                    return (
+                      <div
+                        key={snapshot.id}
+                        className={`p-3 hover:bg-[var(--muted)] cursor-pointer group ${isSelected ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                      >
+                        <div className="flex items-start gap-2">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleVersionCompare(snapshot.id)}
+                            className="mt-1 rounded"
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">
+                              {snapshot.changeDescription}
+                            </p>
+                            <p className="text-xs text-[var(--muted-foreground)]">
+                              {formatTimestamp(snapshot.timestamp)}
+                            </p>
+                            <p className="text-xs text-[var(--muted-foreground)]">
+                              {snapshot.paragraphs.length} paragraphs
+                            </p>
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (confirm(`Revert to this version from ${formatTimestamp(snapshot.timestamp)}? Your current state will be saved to history first.`)) {
+                                handleRevert(snapshot);
+                              }
+                            }}
+                            className="opacity-0 group-hover:opacity-100 px-2 py-1 text-xs bg-[var(--primary)] text-[var(--primary-foreground)] rounded hover:opacity-90 transition-opacity"
+                          >
+                            Revert
+                          </button>
                         </div>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (confirm(`Revert to this version from ${formatTimestamp(snapshot.timestamp)}? Your current state will be saved to history first.`)) {
-                              handleRevert(snapshot);
-                            }
-                          }}
-                          className="opacity-0 group-hover:opacity-100 px-2 py-1 text-xs bg-[var(--primary)] text-[var(--primary-foreground)] rounded hover:opacity-90 transition-opacity"
-                        >
-                          Revert
-                        </button>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

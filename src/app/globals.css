@@ -10,8 +10,20 @@
   --primary-foreground: #ffffff;
 }
 
+/* Dark mode via class (manual toggle) */
+:root.dark {
+  --background: #0a0a0a;
+  --foreground: #ededed;
+  --muted: #262626;
+  --muted-foreground: #a3a3a3;
+  --border: #404040;
+  --primary: #3b82f6;
+  --primary-foreground: #ffffff;
+}
+
+/* Dark mode via system preference (when no manual preference set) */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not(.light) {
     --background: #0a0a0a;
     --foreground: #ededed;
     --muted: #262626;

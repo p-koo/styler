@@ -2,11 +2,19 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import DiffView, { SideBySideDiff, type FeedbackType } from '@/components/DiffView';
 import CritiqueBadge from '@/components/CritiqueBadge';
 import DocumentProfilePanel from '@/components/DocumentProfilePanel';
 import AgentVisualization from '@/components/AgentVisualization';
+import SyntaxHighlighter, { type HighlightMode } from '@/components/SyntaxHighlighter';
 import type { AudienceProfile, CritiqueAnalysis } from '@/types';
+
+// Dynamic import CodeMirror to avoid SSR issues
+const CodeMirrorEditor = dynamic(() => import('@/components/CodeMirrorEditor'), {
+  ssr: false,
+  loading: () => <div className="h-32 bg-[var(--muted)] animate-pulse rounded" />,
+});
 import {
   getDocumentHistory,
   saveSnapshot,
@@ -97,6 +105,7 @@ export default function EditorPage() {
   const [showDocProfile, setShowDocProfile] = useState(true); // Document profile panel - visible by default
   const [showAgentViz, setShowAgentViz] = useState(false); // Agent visualization toggle
   const [darkMode, setDarkMode] = useState<'system' | 'light' | 'dark'>('system'); // Theme preference
+  const [editorMode, setEditorMode] = useState<HighlightMode>('plain'); // Syntax highlighting mode
   const [showNavMenu, setShowNavMenu] = useState(false); // Navigation dropdown
   const navMenuRef = useRef<HTMLDivElement>(null);
   const [searchQuery, setSearchQuery] = useState(''); // Document search
@@ -1262,6 +1271,20 @@ export default function EditorPage() {
               </select>
             </div>
 
+            {/* Syntax: Editor mode with icon */}
+            <div className="flex items-center gap-1 px-2 py-1 rounded-lg border border-[var(--border)] bg-[var(--background)]">
+              <span title="Syntax Mode">📝</span>
+              <select
+                value={editorMode}
+                onChange={(e) => setEditorMode(e.target.value as HighlightMode)}
+                className="text-sm bg-transparent border-none outline-none cursor-pointer"
+              >
+                <option value="plain">Plain</option>
+                <option value="markdown">Markdown</option>
+                <option value="latex">LaTeX</option>
+              </select>
+            </div>
+
             {document && (
               <>
                 {/* Search */}
@@ -1683,32 +1706,50 @@ export default function EditorPage() {
                         </div>
                       ) : editingParagraphIndex === index ? (
                         <div className="p-2">
-                          <textarea
-                            value={editingParagraphContent}
-                            onChange={(e) => {
-                              setEditingParagraphContent(e.target.value);
-                              // Auto-resize
-                              e.target.style.height = 'auto';
-                              e.target.style.height = e.target.scrollHeight + 'px';
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Escape') handleCancelDirectEdit();
-                              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSaveDirectEdit();
-                            }}
-                            ref={(el) => {
-                              if (el) {
-                                // Set initial height based on content
-                                el.style.height = 'auto';
-                                el.style.height = Math.max(el.scrollHeight, 150) + 'px';
-                                el.focus();
-                                // Select all if it's default placeholder text
-                                if (editingParagraphContent === 'New paragraph...' || editingParagraphContent === 'New Section') {
-                                  el.select();
+                          {editorMode === 'plain' ? (
+                            <textarea
+                              value={editingParagraphContent}
+                              onChange={(e) => {
+                                setEditingParagraphContent(e.target.value);
+                                e.target.style.height = 'auto';
+                                e.target.style.height = e.target.scrollHeight + 'px';
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Escape') handleCancelDirectEdit();
+                                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSaveDirectEdit();
+                              }}
+                              ref={(el) => {
+                                if (el) {
+                                  el.style.height = 'auto';
+                                  el.style.height = Math.max(el.scrollHeight, 150) + 'px';
+                                  el.focus();
+                                  if (editingParagraphContent === 'New paragraph...' || editingParagraphContent === 'New Section') {
+                                    el.select();
+                                  }
                                 }
-                              }
-                            }}
-                            className="w-full p-4 border-2 border-[var(--primary)] rounded-lg bg-[var(--background)] resize-none text-base leading-relaxed focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
-                          />
+                              }}
+                              className="w-full p-4 border-2 border-[var(--primary)] rounded-lg bg-[var(--background)] resize-none text-base leading-relaxed focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+                            />
+                          ) : (
+                            <div
+                              onKeyDown={(e) => {
+                                if (e.key === 'Escape') handleCancelDirectEdit();
+                                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                                  e.preventDefault();
+                                  handleSaveDirectEdit();
+                                }
+                              }}
+                            >
+                              <CodeMirrorEditor
+                                value={editingParagraphContent}
+                                onChange={setEditingParagraphContent}
+                                mode={editorMode}
+                                darkMode={darkMode === 'dark' || (darkMode === 'system' && typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches)}
+                                minHeight="150px"
+                                className="border-2 border-[var(--primary)]"
+                              />
+                            </div>
+                          )}
                           <div className="flex items-center justify-between mt-2">
                             <span className="text-xs text-[var(--muted-foreground)]">
                               Cmd/Ctrl+Enter to save, Escape to cancel
@@ -1748,12 +1789,12 @@ export default function EditorPage() {
                         >
                           {para.type === 'heading' ? (
                             <h3 className="text-lg font-semibold text-[var(--foreground)]">
-                              {para.content}
+                              <SyntaxHighlighter content={para.content} mode={editorMode} />
                             </h3>
                           ) : (
-                            <p className="leading-relaxed whitespace-pre-wrap">
-                              {para.content}
-                            </p>
+                            <div className="leading-relaxed">
+                              <SyntaxHighlighter content={para.content} mode={editorMode} />
+                            </div>
                           )}
                         </div>
                       )}

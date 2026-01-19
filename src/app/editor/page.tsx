@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef } from 'react';
+import Link from 'next/link';
 import DiffView, { SideBySideDiff, type FeedbackType } from '@/components/DiffView';
 import CritiqueBadge from '@/components/CritiqueBadge';
 import DocumentProfilePanel from '@/components/DocumentProfilePanel';
@@ -96,6 +97,8 @@ export default function EditorPage() {
   const [showDocProfile, setShowDocProfile] = useState(true); // Document profile panel - visible by default
   const [showAgentViz, setShowAgentViz] = useState(false); // Agent visualization toggle
   const [darkMode, setDarkMode] = useState<'system' | 'light' | 'dark'>('system'); // Theme preference
+  const [showNavMenu, setShowNavMenu] = useState(false); // Navigation dropdown
+  const navMenuRef = useRef<HTMLDivElement>(null);
   const [searchQuery, setSearchQuery] = useState(''); // Document search
   const [searchResults, setSearchResults] = useState<number[]>([]); // Paragraph indices with matches
   const [currentSearchIndex, setCurrentSearchIndex] = useState(0); // Current match navigation
@@ -205,6 +208,17 @@ export default function EditorPage() {
     setSearchResults(matches);
     setCurrentSearchIndex(0);
   }, [searchQuery, document]);
+
+  // Close nav menu when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (navMenuRef.current && !navMenuRef.current.contains(event.target as Node)) {
+        setShowNavMenu(false);
+      }
+    }
+    window.document.addEventListener('mousedown', handleClickOutside);
+    return () => window.document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Navigate to next/prev search result
   const navigateSearch = (direction: 'next' | 'prev') => {
@@ -1158,172 +1172,211 @@ export default function EditorPage() {
   return (
     <div className="h-screen flex flex-col overflow-hidden">
       {/* Header */}
-      <header className="flex-shrink-0 border-b border-[var(--border)] px-4 py-3">
+      <header className="flex-shrink-0 border-b border-[var(--border)] px-4 py-2">
         <div className="flex items-center justify-between">
+          {/* Left: Logo with navigation dropdown */}
           <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <img src="/logo.png" alt="Styler" className="h-8 w-8" />
-              <h1 className="text-xl font-semibold">Styler</h1>
+            <div className="relative" ref={navMenuRef}>
+              <button
+                onClick={() => setShowNavMenu(!showNavMenu)}
+                className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+              >
+                <img src="/logo.png" alt="Styler" className="h-8 w-8" />
+                <span className="text-xl font-semibold">Styler</span>
+                <svg
+                  className={`w-4 h-4 text-[var(--muted-foreground)] transition-transform ${showNavMenu ? 'rotate-180' : ''}`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+
+              {showNavMenu && (
+                <div className="absolute top-full left-0 mt-1 w-48 bg-[var(--background)] border border-[var(--border)] rounded-lg shadow-lg py-1 z-50">
+                  <Link
+                    href="/"
+                    onClick={() => setShowNavMenu(false)}
+                    className="block px-4 py-2 text-sm text-[var(--foreground)] hover:bg-[var(--muted)]"
+                  >
+                    Home
+                  </Link>
+                  <div className="px-4 py-2 text-sm bg-[var(--primary)] text-[var(--primary-foreground)]">
+                    Editor
+                  </div>
+                  <Link
+                    href="/settings"
+                    onClick={() => setShowNavMenu(false)}
+                    className="block px-4 py-2 text-sm text-[var(--foreground)] hover:bg-[var(--muted)]"
+                  >
+                    Settings
+                  </Link>
+                  <Link
+                    href="/about"
+                    onClick={() => setShowNavMenu(false)}
+                    className="block px-4 py-2 text-sm text-[var(--foreground)] hover:bg-[var(--muted)]"
+                  >
+                    About
+                  </Link>
+                </div>
+              )}
             </div>
+
             {isAnalyzing && (
               <span className="text-sm text-[var(--muted-foreground)]">
-                Analyzing structure...
+                Analyzing...
               </span>
             )}
           </div>
-          <div className="flex items-center gap-4">
-            {/* Model selector */}
-            <select
-              value={selectedModel}
-              onChange={(e) => handleModelChange(e.target.value)}
-              className="px-3 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--background)] text-sm"
-            >
-              {availableModels.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
 
-            {/* Profile selector */}
-            <select
-              value={activeProfile || ''}
-              onChange={(e) => setActiveProfile(e.target.value || null)}
-              className="px-3 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--background)] text-sm"
-            >
-              <option value="">Base Style Only</option>
-              {profiles.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
+          {/* Right: Controls */}
+          <div className="flex items-center gap-2">
+            {/* Style: Profile selector with icon */}
+            <div className="flex items-center gap-1 px-2 py-1 rounded-lg border border-[var(--border)] bg-[var(--background)]">
+              <span title="Style Profile">🎨</span>
+              <select
+                value={activeProfile || ''}
+                onChange={(e) => setActiveProfile(e.target.value || null)}
+                className="text-sm bg-transparent border-none outline-none cursor-pointer"
+              >
+                <option value="">Base Style</option>
+                {profiles.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-            {/* Diff mode toggle */}
-            <select
-              value={diffMode}
-              onChange={(e) => setDiffMode(e.target.value as 'inline' | 'side-by-side')}
-              className="px-3 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--background)] text-sm"
-            >
-              <option value="inline">Inline Diff</option>
-              <option value="side-by-side">Side by Side</option>
-            </select>
+            {/* View: Diff mode with icon */}
+            <div className="flex items-center gap-1 px-2 py-1 rounded-lg border border-[var(--border)] bg-[var(--background)]">
+              <span title="Diff View">👁️</span>
+              <select
+                value={diffMode}
+                onChange={(e) => setDiffMode(e.target.value as 'inline' | 'side-by-side')}
+                className="text-sm bg-transparent border-none outline-none cursor-pointer"
+              >
+                <option value="inline">Inline</option>
+                <option value="side-by-side">Side by Side</option>
+              </select>
+            </div>
 
             {document && (
               <>
-                {/* Undo/Redo buttons */}
+                {/* Search */}
+                <div className="flex items-center gap-1">
+                  <div className="relative">
+                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]">🔍</span>
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Search..."
+                      className="w-28 pl-7 pr-6 py-1 text-sm border border-[var(--border)] rounded-lg bg-[var(--background)]"
+                    />
+                    {searchQuery && (
+                      <button
+                        onClick={() => setSearchQuery('')}
+                        className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)] hover:text-[var(--foreground)] text-sm"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                  {searchResults.length > 0 && (
+                    <>
+                      <span className="text-xs text-[var(--muted-foreground)]">
+                        {currentSearchIndex + 1}/{searchResults.length}
+                      </span>
+                      <button
+                        onClick={() => navigateSearch('prev')}
+                        className="p-1 text-xs hover:bg-[var(--muted)] rounded"
+                      >
+                        ▲
+                      </button>
+                      <button
+                        onClick={() => navigateSearch('next')}
+                        className="p-1 text-xs hover:bg-[var(--muted)] rounded"
+                      >
+                        ▼
+                      </button>
+                    </>
+                  )}
+                  {searchQuery && searchResults.length === 0 && (
+                    <span className="text-xs text-red-500">None</span>
+                  )}
+                </div>
+
+                {/* Divider */}
+                <div className="h-6 w-px bg-[var(--border)]" />
+
+                {/* Undo/Redo */}
                 <div className="flex border border-[var(--border)] rounded-lg overflow-hidden">
                   <button
                     onClick={handleUndo}
                     disabled={!canUndo}
-                    className="px-3 py-1.5 text-sm hover:bg-[var(--muted)] disabled:opacity-30 disabled:cursor-not-allowed border-r border-[var(--border)]"
-                    title="Undo (go back in history)"
+                    className="px-2 py-1 text-sm hover:bg-[var(--muted)] disabled:opacity-30 disabled:cursor-not-allowed border-r border-[var(--border)]"
+                    title="Undo"
                   >
                     ↩
                   </button>
                   <button
                     onClick={handleRedo}
                     disabled={!canRedo}
-                    className="px-3 py-1.5 text-sm hover:bg-[var(--muted)] disabled:opacity-30 disabled:cursor-not-allowed"
-                    title="Redo (go forward)"
+                    className="px-2 py-1 text-sm hover:bg-[var(--muted)] disabled:opacity-30 disabled:cursor-not-allowed"
+                    title="Redo"
                   >
                     ↪
                   </button>
                 </div>
-                <button
-                  onClick={handleExportDocument}
-                  disabled={isExporting}
-                  className="px-4 py-1.5 rounded-lg border border-blue-500 text-blue-600 text-sm hover:bg-blue-50 font-medium disabled:opacity-50"
-                >
-                  {isExporting ? 'Exporting...' : 'Export'}
-                </button>
+
+                {/* History */}
                 <button
                   onClick={() => setShowHistory(!showHistory)}
-                  className={`px-4 py-1.5 rounded-lg border text-sm ${
+                  className={`p-2 rounded-lg border ${
                     showHistory
                       ? 'border-[var(--primary)] bg-[var(--primary)]/10 text-[var(--primary)]'
                       : 'border-[var(--border)] hover:bg-[var(--muted)]'
                   }`}
+                  title={`History${history && history.snapshots.length > 0 ? ` (${history.snapshots.length})` : ''}`}
                 >
-                  History {history && history.snapshots.length > 0 && `(${history.snapshots.length})`}
+                  📜
                 </button>
+
+                {/* Doc Profile */}
                 <button
                   onClick={() => setShowDocProfile(!showDocProfile)}
-                  className={`px-4 py-1.5 rounded-lg border text-sm ${
+                  className={`p-2 rounded-lg border ${
                     showDocProfile
                       ? 'border-purple-500 bg-purple-50 text-purple-600'
                       : 'border-[var(--border)] hover:bg-[var(--muted)]'
                   }`}
+                  title="Document Profile"
                 >
-                  Doc Profile
+                  📋
                 </button>
+
+                {/* Export */}
+                <button
+                  onClick={handleExportDocument}
+                  disabled={isExporting}
+                  className="p-2 rounded-lg border border-[var(--border)] hover:bg-[var(--muted)] disabled:opacity-50"
+                  title="Export"
+                >
+                  📤
+                </button>
+
+                {/* Close document */}
                 <button
                   onClick={handleClearDocument}
-                  className="px-4 py-1.5 rounded-lg border border-red-300 text-red-600 text-sm hover:bg-red-50"
+                  className="p-2 rounded-lg border border-red-200 text-red-500 hover:bg-red-50"
+                  title="Close document"
                 >
-                  Close
+                  ✕
                 </button>
               </>
             )}
-            {/* Search */}
-            {document && (
-              <div className="flex items-center gap-1">
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search..."
-                    className="w-32 px-2 py-1 pr-6 text-sm border border-[var(--border)] rounded bg-[var(--background)]"
-                  />
-                  {searchQuery && (
-                    <button
-                      onClick={() => setSearchQuery('')}
-                      className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)] hover:text-[var(--foreground)] text-sm"
-                    >
-                      ✕
-                    </button>
-                  )}
-                </div>
-                {searchResults.length > 0 && (
-                  <>
-                    <span className="text-xs text-[var(--muted-foreground)]">
-                      {currentSearchIndex + 1}/{searchResults.length}
-                    </span>
-                    <button
-                      onClick={() => navigateSearch('prev')}
-                      className="p-1 text-xs hover:bg-[var(--muted)] rounded"
-                    >
-                      ▲
-                    </button>
-                    <button
-                      onClick={() => navigateSearch('next')}
-                      className="p-1 text-xs hover:bg-[var(--muted)] rounded"
-                    >
-                      ▼
-                    </button>
-                  </>
-                )}
-                {searchQuery && searchResults.length === 0 && (
-                  <span className="text-xs text-red-500">No matches</span>
-                )}
-              </div>
-            )}
-            <button
-              onClick={cycleTheme}
-              className="p-2 rounded-lg hover:bg-[var(--muted)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-              title={`Theme: ${darkMode}`}
-            >
-              {darkMode === 'light' && '☀️'}
-              {darkMode === 'dark' && '🌙'}
-              {darkMode === 'system' && '💻'}
-            </button>
-            <a
-              href="/settings"
-              className="text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-            >
-              Settings
-            </a>
           </div>
         </div>
       </header>

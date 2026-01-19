@@ -1,7 +1,11 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import Header from '@/components/Header';
 import type { PreferenceStore, AudienceProfile, BaseStyle } from '@/types';
+
+const MODEL_STORAGE_KEY = 'preference-editor-model';
+const THEME_STORAGE_KEY = 'styler-theme';
 
 /**
  * Generate a ChatGPT-ready prompt from a profile
@@ -111,9 +115,55 @@ export default function SettingsPage() {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [extractionPrompt, setExtractionPrompt] = useState('');
 
+  // Editor preferences (model & theme)
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [selectedModel, setSelectedModel] = useState<string>('');
+  const [darkMode, setDarkMode] = useState<'system' | 'light' | 'dark'>('system');
+
   useEffect(() => {
     fetchPreferences();
+    fetchModels();
+    // Load theme from localStorage
+    const savedTheme = localStorage.getItem(THEME_STORAGE_KEY) as 'system' | 'light' | 'dark' | null;
+    if (savedTheme) {
+      setDarkMode(savedTheme);
+    }
   }, []);
+
+  // Apply dark mode
+  useEffect(() => {
+    const root = window.document.documentElement;
+    root.classList.remove('light', 'dark');
+    if (darkMode !== 'system') {
+      root.classList.add(darkMode);
+    }
+    localStorage.setItem(THEME_STORAGE_KEY, darkMode);
+  }, [darkMode]);
+
+  async function fetchModels() {
+    try {
+      const res = await fetch('/api/preferences/models');
+      if (res.ok) {
+        const data = await res.json();
+        setAvailableModels(data.models || []);
+        // Load saved model preference
+        const savedModel = localStorage.getItem(MODEL_STORAGE_KEY);
+        if (savedModel && data.models?.includes(savedModel)) {
+          setSelectedModel(savedModel);
+        } else if (data.models?.length > 0) {
+          setSelectedModel(data.models[0]);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load models:', err);
+    }
+  }
+
+  function handleModelChange(model: string) {
+    setSelectedModel(model);
+    localStorage.setItem(MODEL_STORAGE_KEY, model);
+    setMessage({ type: 'success', text: `Model changed to ${model}` });
+  }
 
   async function fetchPreferences() {
     try {
@@ -365,30 +415,94 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto p-6">
-      <div className="flex items-center justify-between mb-8">
-        <h1 className="text-2xl font-semibold">Preference Settings</h1>
-        <a
-          href="/"
-          className="px-4 py-2 rounded-lg border border-[var(--border)] hover:bg-[var(--muted)]"
-        >
-          Back to Chat
-        </a>
-      </div>
+    <div className="min-h-screen bg-[var(--background)]">
+      <Header currentPage="settings" />
 
-      {message && (
-        <div
-          className={`mb-6 p-4 rounded-lg ${
-            message.type === 'success'
-              ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-              : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
-          }`}
-        >
-          {message.text}
-        </div>
-      )}
+      <div className="max-w-4xl mx-auto p-6">
+        <h1 className="text-2xl font-semibold mb-8">Settings</h1>
 
-      {/* Base Style Section */}
+        {message && (
+          <div
+            className={`mb-6 p-4 rounded-lg ${
+              message.type === 'success'
+                ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+            }`}
+          >
+            {message.text}
+          </div>
+        )}
+
+        {/* Editor Preferences Section */}
+        <section className="mb-8 p-6 border border-[var(--border)] rounded-lg">
+          <h2 className="text-lg font-medium mb-4">Editor Preferences</h2>
+          <p className="text-[var(--muted-foreground)] text-sm mb-4">
+            Configure your AI model and display preferences.
+          </p>
+
+          <div className="grid grid-cols-2 gap-6">
+            {/* AI Model */}
+            <div>
+              <label className="block text-sm font-medium mb-2">AI Model</label>
+              <select
+                value={selectedModel}
+                onChange={(e) => handleModelChange(e.target.value)}
+                className="w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)]"
+              >
+                {availableModels.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                Select the AI model used for generating edit suggestions.
+              </p>
+            </div>
+
+            {/* Theme */}
+            <div>
+              <label className="block text-sm font-medium mb-2">Theme</label>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setDarkMode('light')}
+                  className={`flex-1 px-3 py-2 rounded-lg border ${
+                    darkMode === 'light'
+                      ? 'border-[var(--primary)] bg-[var(--primary)]/10 text-[var(--primary)]'
+                      : 'border-[var(--border)] hover:bg-[var(--muted)]'
+                  }`}
+                >
+                  ☀️ Light
+                </button>
+                <button
+                  onClick={() => setDarkMode('dark')}
+                  className={`flex-1 px-3 py-2 rounded-lg border ${
+                    darkMode === 'dark'
+                      ? 'border-[var(--primary)] bg-[var(--primary)]/10 text-[var(--primary)]'
+                      : 'border-[var(--border)] hover:bg-[var(--muted)]'
+                  }`}
+                >
+                  🌙 Dark
+                </button>
+                <button
+                  onClick={() => setDarkMode('system')}
+                  className={`flex-1 px-3 py-2 rounded-lg border ${
+                    darkMode === 'system'
+                      ? 'border-[var(--primary)] bg-[var(--primary)]/10 text-[var(--primary)]'
+                      : 'border-[var(--border)] hover:bg-[var(--muted)]'
+                  }`}
+                >
+                  💻 System
+                </button>
+              </div>
+              <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                Choose your preferred color scheme.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {/* Base Style Section */}
       <section className="mb-8 p-6 border border-[var(--border)] rounded-lg">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-medium">Base Style</h2>
@@ -1132,6 +1246,7 @@ export default function SettingsPage() {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }

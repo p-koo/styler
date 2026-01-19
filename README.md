@@ -1,6 +1,11 @@
-# Styler
+<p align="center">
+  <img src="logo.svg" alt="Styler Logo" width="400">
+</p>
 
-An agentic AI system for document editing that learns and applies your personal writing style. Designed for researchers, academics, and professionals who need consistent, high-quality writing assistance for papers, grants, and technical documents.
+<p align="center">
+  An agentic AI system for document editing that learns and applies your personal writing style.<br>
+  Designed for researchers, academics, and professionals who need consistent, high-quality writing assistance for papers, grants, and technical documents.
+</p>
 
 ## What is Styler?
 

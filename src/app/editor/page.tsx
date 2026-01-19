@@ -1674,22 +1674,6 @@ export default function EditorPage() {
                         {isLoading ? 'Getting suggestion...' : (isMultiple ? 'Improve Flow' : 'Get Edit Suggestion')}
                       </button>
 
-                      {/* Copy and Delete buttons */}
-                      <div className="flex gap-2">
-                        <button
-                          onClick={handleCopySelected}
-                          className="flex-1 py-2 border border-[var(--border)] rounded-lg hover:bg-[var(--muted)] text-sm"
-                        >
-                          Copy {isMultiple ? `${selectedIndices.length} blocks` : 'block'}
-                        </button>
-                        <button
-                          onClick={handleDeleteSelected}
-                          className="flex-1 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 text-sm"
-                        >
-                          Delete {isMultiple ? `${selectedIndices.length} blocks` : 'block'}
-                        </button>
-                      </div>
-
 
                       <button
                         onClick={clearSelection}

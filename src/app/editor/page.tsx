@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import DiffView, { SideBySideDiff, type FeedbackType } from '@/components/DiffView';
 import CritiqueBadge from '@/components/CritiqueBadge';
 import DocumentProfilePanel from '@/components/DocumentProfilePanel';
+import AgentVisualization from '@/components/AgentVisualization';
 import type { AudienceProfile, CritiqueAnalysis } from '@/types';
 import {
   getDocumentHistory,
@@ -93,6 +94,7 @@ export default function EditorPage() {
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [futureStates, setFutureStates] = useState<Array<{ paragraphs: Paragraph[]; description: string }>>([]); // For redo
   const [showDocProfile, setShowDocProfile] = useState(true); // Document profile panel - visible by default
+  const [showAgentViz, setShowAgentViz] = useState(false); // Agent visualization toggle
 
   // Load history when document changes
   useEffect(() => {
@@ -1674,6 +1676,24 @@ export default function EditorPage() {
                         {isLoading ? 'Getting suggestion...' : (isMultiple ? 'Improve Flow' : 'Get Edit Suggestion')}
                       </button>
 
+                      {/* Agent Visualization Toggle */}
+                      <label className="flex items-center gap-2 text-sm cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={showAgentViz}
+                          onChange={(e) => setShowAgentViz(e.target.checked)}
+                          className="rounded border-[var(--border)]"
+                        />
+                        <span className="text-[var(--muted-foreground)]">Show agent activity</span>
+                      </label>
+
+                      {/* Agent Visualization */}
+                      {showAgentViz && (
+                        <AgentVisualization
+                          isActive={isLoading}
+                          maxIterations={3}
+                        />
+                      )}
 
                       <button
                         onClick={clearSelection}

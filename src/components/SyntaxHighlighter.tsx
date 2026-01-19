@@ -196,38 +196,53 @@ function tokenizeMarkdown(text: string): Token[] {
   return tokens;
 }
 
-// Get CSS class for token type
-function getTokenClass(type: string, mode: HighlightMode): string {
+// Get inline style for token type
+function getTokenStyle(type: string, mode: HighlightMode): React.CSSProperties {
   if (mode === 'latex') {
     switch (type) {
-      case 'comment': return 'text-gray-500 italic';
-      case 'math': return 'text-purple-600 dark:text-purple-400';
-      case 'command': return 'text-blue-600 dark:text-blue-400 font-medium';
-      case 'environment': return 'text-violet-600 dark:text-violet-400 font-medium';
-      case 'argument': return 'text-emerald-600 dark:text-emerald-400';
-      case 'brace': return 'text-gray-500';
-      default: return '';
+      case 'comment': return { color: '#6b7280', fontStyle: 'italic' };
+      case 'math': return { color: '#9333ea' }; // purple-600
+      case 'command': return { color: '#2563eb', fontWeight: 500 }; // blue-600
+      case 'environment': return { color: '#7c3aed', fontWeight: 500 }; // violet-600
+      case 'argument': return { color: '#059669' }; // emerald-600
+      case 'brace': return { color: '#6b7280' }; // gray-500
+      default: return {};
     }
   }
 
   if (mode === 'markdown') {
     switch (type) {
-      case 'heading': return 'text-gray-900 dark:text-gray-100 font-bold';
-      case 'bold': return 'font-bold';
-      case 'italic': return 'italic';
-      case 'strikethrough': return 'line-through';
-      case 'code': return 'bg-gray-100 dark:bg-gray-800 text-pink-600 dark:text-pink-400 px-1 rounded font-mono text-sm';
-      case 'codeblock': return 'bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200 px-2 py-1 rounded font-mono text-sm block';
-      case 'link': return 'text-blue-600 dark:text-blue-400 underline';
-      case 'image': return 'text-green-600 dark:text-green-400';
-      case 'blockquote': return 'text-gray-600 dark:text-gray-400 border-l-4 border-gray-300 pl-2';
-      case 'list': return 'text-gray-500';
-      case 'hr': return 'text-gray-400';
-      default: return '';
+      case 'heading': return { fontWeight: 'bold', color: '#1f2937' };
+      case 'bold': return { fontWeight: 'bold' };
+      case 'italic': return { fontStyle: 'italic' };
+      case 'strikethrough': return { textDecoration: 'line-through' };
+      case 'code': return {
+        backgroundColor: '#f3f4f6',
+        color: '#db2777',
+        padding: '0.125rem 0.25rem',
+        borderRadius: '0.25rem',
+        fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
+        fontSize: '0.875em'
+      };
+      case 'codeblock': return {
+        backgroundColor: '#f3f4f6',
+        color: '#374151',
+        padding: '0.25rem 0.5rem',
+        borderRadius: '0.25rem',
+        fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
+        fontSize: '0.875em',
+        display: 'block'
+      };
+      case 'link': return { color: '#2563eb', textDecoration: 'underline' };
+      case 'image': return { color: '#059669' };
+      case 'blockquote': return { color: '#6b7280', borderLeft: '4px solid #d1d5db', paddingLeft: '0.5rem' };
+      case 'list': return { color: '#6b7280' };
+      case 'hr': return { color: '#9ca3af' };
+      default: return {};
     }
   }
 
-  return '';
+  return {};
 }
 
 export default function SyntaxHighlighter({ content, mode, className = '' }: SyntaxHighlighterProps) {
@@ -239,10 +254,10 @@ export default function SyntaxHighlighter({ content, mode, className = '' }: Syn
     const tokens = mode === 'latex' ? tokenizeLatex(content) : tokenizeMarkdown(content);
 
     return tokens.map((token, i) => {
-      const tokenClass = getTokenClass(token.type, mode);
-      if (tokenClass) {
+      const style = getTokenStyle(token.type, mode);
+      if (Object.keys(style).length > 0) {
         return (
-          <span key={i} className={tokenClass}>
+          <span key={i} style={style}>
             {token.content}
           </span>
         );

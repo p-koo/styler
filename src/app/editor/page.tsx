@@ -145,7 +145,7 @@ export default function EditorPage() {
   const [editorMode, setEditorMode] = useState<HighlightMode>('plain'); // Syntax highlighting mode
   const [showNavMenu, setShowNavMenu] = useState(false); // Navigation dropdown
   const [showFeedbackPanel, setShowFeedbackPanel] = useState(false); // Document review/feedback panel
-  const [feedbackPanelState, setFeedbackPanelState] = useState<FeedbackPanelState>(DEFAULT_FEEDBACK_STATE); // Persisted feedback panel state
+  const [feedbackStates, setFeedbackStates] = useState<Record<string, FeedbackPanelState>>({}); // Per-document feedback states
   const navMenuRef = useRef<HTMLDivElement>(null);
   const [searchQuery, setSearchQuery] = useState(''); // Document search
   const [searchResults, setSearchResults] = useState<number[]>([]); // Paragraph indices with matches
@@ -943,7 +943,6 @@ export default function EditorPage() {
     setDocument(null);
     setSelectedParagraphs(new Set());
     setLastSelectedIndex(null);
-    setFeedbackPanelState(DEFAULT_FEEDBACK_STATE); // Reset feedback panel
   }, []);
 
   // Create new blank document
@@ -957,7 +956,6 @@ export default function EditorPage() {
     setSelectedParagraphs(new Set());
     setLastSelectedIndex(null);
     setEditorMode('plain'); // Reset to plain for new document
-    setFeedbackPanelState(DEFAULT_FEEDBACK_STATE); // Reset feedback panel
     setShowAIGenerate(true); // Show AI panel to help start
   }, []);
 
@@ -2180,8 +2178,8 @@ export default function EditorPage() {
               paragraphs={document.paragraphs.map(p => p.content)}
               selectedIndices={Array.from(selectedParagraphs)}
               documentStructure={document.structure}
-              savedState={feedbackPanelState}
-              onStateChange={setFeedbackPanelState}
+              savedState={feedbackStates[document.id]}
+              onStateChange={(state) => setFeedbackStates(prev => ({ ...prev, [document.id]: state }))}
               onClose={() => setShowFeedbackPanel(false)}
               onScrollToParagraph={(index) => {
                 // Scroll to paragraph and highlight it

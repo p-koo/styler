@@ -1,159 +1,353 @@
 # Styler
 
-AI-powered document editing with personalized style preferences. Styler learns your writing style from your ChatGPT conversation history and applies it to help you edit documents consistently.
+An agentic AI system for document editing that learns and applies your personal writing style. Designed for researchers, academics, and professionals who need consistent, high-quality writing assistance for papers, grants, and technical documents.
 
-## Overview
+## What is Styler?
 
-Styler is a document editor that uses LLMs to suggest edits aligned with your personal writing style. Instead of generic AI editing, Styler learns your preferences for verbosity, formality, hedging, word choices, and more—then applies these preferences when suggesting improvements to your text.
+Styler is a multi-agent AI system that goes beyond simple text editing. It uses a coordinated system of specialized AI agents to:
 
-## Key Features
+1. **Learn your writing style** from your existing work (ChatGPT conversations, documents)
+2. **Generate style-aligned edits** that match your preferences for verbosity, formality, and tone
+3. **Critique and refine suggestions** through an iterative feedback loop
+4. **Adapt continuously** based on which edits you accept or reject
 
-- **Style Learning**: Bootstrap your preferences from ChatGPT conversation exports
-- **Document-Specific Profiles**: Each document can have its own style adjustments
-- **Interactive Diff Views**: Inline and side-by-side views with word-level highlighting
-- **Accept/Reject Learning**: The system learns from which edits you accept or reject
-- **Multiple LLM Support**: Works with Anthropic (Claude), OpenAI, and local Ollama models
-- **Real-time Adjustments**: Sliders for verbosity, formality, and hedging
-- **Auto-save**: Documents save automatically as you work
+Unlike generic AI writing tools, Styler maintains your authentic voice while improving clarity and consistency.
 
-## Workflow
+## Use Cases
 
-### 1. Bootstrap Your Style (Optional)
+### Academic Writing
+- **Research Papers**: Maintain consistent scientific writing style across sections
+- **Grant Proposals**: Ensure appropriate tone and hedging for funding applications
+- **Thesis/Dissertation**: Keep voice consistent across chapters written over months or years
 
-Export your ChatGPT conversations and upload them in Settings. Styler analyzes your writing patterns to create a base style profile including:
-- Verbosity preferences (terse vs detailed)
-- Formality level (casual vs academic)
-- Hedging style (confident vs cautious)
-- Words you frequently use or avoid
-- Sentence structure patterns
+### Professional Documents
+- **Technical Documentation**: Standardize terminology and explanation depth
+- **Reports**: Match organizational writing standards
+- **Proposals**: Calibrate formality for different audiences
 
-### 2. Create or Import a Document
+## Agentic Architecture
 
-- Paste text directly into the editor
-- Upload a `.txt` file
-- Or start with AI-generated content from a prompt
+Styler uses a multi-agent architecture where specialized agents collaborate to produce high-quality edits:
 
-### 3. Edit with AI Assistance
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      Edit Orchestrator                          │
+│         Coordinates the editing loop, manages retries           │
+└─────────────────────┬───────────────────────────────────────────┘
+                      │
+        ┌─────────────┼─────────────┐
+        ▼             ▼             ▼
+┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+│ Prompt Agent │ │ Edit Agent   │ │Critique Agent│
+│              │ │              │ │              │
+│ Builds style-│ │ Generates    │ │ Evaluates    │
+│ aware system │ │ the actual   │ │ alignment &  │
+│ prompts      │ │ text edits   │ │ quality      │
+└──────────────┘ └──────────────┘ └──────────────┘
+        │                               │
+        └───────────────────────────────┘
+                Feedback Loop
+```
 
-1. **Select a paragraph** by clicking on it
-2. **Get edit suggestions** using the "Get Edit Suggestion" button
-3. **Review the diff** showing exactly what changed
-4. **Accept, reject, or modify** the suggested changes
-5. The system learns from your decisions
+### Agent Descriptions
 
-### 4. Fine-tune with Document Profile
+| Agent | Role | Key Functions |
+|-------|------|---------------|
+| **Edit Orchestrator** | Coordinator | Manages the edit-critique-refine loop, applies document preferences, handles retries |
+| **Prompt Agent** | Context Builder | Constructs style-aware prompts from base style, audience profiles, and document preferences |
+| **Critique Agent** | Quality Evaluator | Scores edit alignment (0-1), identifies issues, suggests improvements |
+| **Learning Agent** | Preference Updater | Analyzes accept/reject patterns, updates document profiles |
 
-Each document has its own profile panel where you can:
-- Adjust verbosity (Terse ↔ Detailed)
-- Adjust formality (Casual ↔ Formal)
-- Adjust hedging (Confident ↔ Cautious)
-- Add words to avoid
-- Add framing guidance
+### Iterative Refinement
 
-### 5. Export
+When you request an edit, the system:
 
-Export your finished document as a `.txt` file.
+1. **Generates** an initial edit using your style preferences
+2. **Critiques** the edit for alignment with your preferences
+3. **Refines** if alignment score < 0.8 (configurable threshold)
+4. **Repeats** up to 3 iterations until quality threshold is met
+5. **Presents** the best version for your review
+
+## Features
+
+### Style Learning & Profiles
+
+#### Bootstrap from ChatGPT
+Export your ChatGPT conversation history and upload it to Styler. The system analyzes your writing patterns to extract:
+- Vocabulary preferences and word frequency patterns
+- Sentence structure and complexity preferences
+- Formality and hedging tendencies
+- Topic-specific terminology
+
+#### Audience Profiles
+Create multiple profiles for different contexts:
+- "Academic Journal" - formal, precise, appropriately hedged
+- "Grant Proposal" - persuasive, clear impact statements
+- "Technical Blog" - accessible, engaging, example-rich
+
+#### Document-Specific Adjustments
+Each document maintains its own preference layer:
+- Fine-tune verbosity, formality, hedging via sliders
+- Add document-specific words to avoid
+- Include framing guidance ("emphasize novelty", "be concise")
+
+### Editing Interface
+
+#### Paragraph Selection
+- Click to select a single paragraph
+- Shift+click for range selection
+- Cmd/Ctrl+click for multi-select
+
+#### Edit Suggestions
+```
+Original (224 words):
+"It is important to note that the methodology that was employed
+in this study represents a significant advancement over previous
+approaches that have been utilized in the field..."
+
+Suggested with Terse mode (156 words, -30%):
+"Our methodology significantly advances previous approaches..."
+```
+
+#### Interactive Diff Views
+
+**Inline View**: Best for single paragraphs
+- Word-level diff highlighting
+- Click any change to toggle accept/reject
+- Shows removed (red) and added (green) inline
+
+**Side-by-Side View**: Best for multi-paragraph edits
+- Original on left, suggested on right
+- Highlighted differences on both sides
+- Resizable partition
+
+### Real-time Adjustments
+
+#### Verbosity Slider (Terse ↔ Detailed)
+| Setting | Effect | Target |
+|---------|--------|--------|
+| Terse (-2) | Aggressive compression | 30-50% fewer words |
+| Moderate (0) | Balanced | Minimal change |
+| Detailed (+2) | Expansion encouraged | Add context/examples |
+
+#### Formality Slider (Casual ↔ Formal)
+| Setting | Effect |
+|---------|--------|
+| Casual (-2) | Contractions, first person, conversational |
+| Moderate (0) | Professional but accessible |
+| Formal (+2) | No contractions, third person, academic register |
+
+#### Hedging Slider (Confident ↔ Cautious)
+| Setting | Effect |
+|---------|--------|
+| Confident (-2) | Remove "may", "might", "suggests" |
+| Moderate (0) | Balanced assertions |
+| Cautious (+2) | Add qualifiers, acknowledge uncertainty |
+
+### Learning from Feedback
+
+#### Accept/Reject Tracking
+Every edit decision is recorded:
+```
+Accept → System learns this style aligns with preferences
+Reject → System adjusts to avoid similar suggestions
+Partial → System learns nuanced preferences from your modifications
+```
+
+#### Quick Feedback Buttons
+One-click feedback for common issues:
+- "Too long" / "Too short"
+- "Too formal" / "Too casual"
+- "Too hedged" / "Too bold"
+
+### Document Management
+
+- **Auto-save**: Changes save automatically (1-second debounce)
+- **Version History**: Undo/redo with full paragraph history
+- **Export**: Download as `.txt` with timestamped filename
+- **Multiple Documents**: Switch between documents, each with own preferences
 
 ## Installation
 
 ### Prerequisites
 
-- Node.js 18+
-- npm or yarn
-- API key for at least one LLM provider:
-  - Anthropic API key (for Claude models)
-  - OpenAI API key
-  - Or local Ollama installation
+- **Node.js 18+**
+- **npm** or **yarn**
+- **API Key** for at least one provider:
+  - [Anthropic API](https://console.anthropic.com/) (Claude) - Recommended
+  - [OpenAI API](https://platform.openai.com/)
+  - [Ollama](https://ollama.ai/) (local, free)
 
-### Setup
+### Quick Start
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/p-koo/styler.git
-   cd styler
-   ```
+```bash
+# Clone the repository
+git clone https://github.com/p-koo/styler.git
+cd styler
 
-2. **Install dependencies**
-   ```bash
-   npm install
-   ```
+# Install dependencies
+npm install
 
-3. **Configure environment variables**
+# Configure API keys
+cp .env.example .env.local
+# Edit .env.local and add your API keys:
+# ANTHROPIC_API_KEY=sk-ant-...
+# OPENAI_API_KEY=sk-...
 
-   Copy the example environment file:
-   ```bash
-   cp .env.example .env.local
-   ```
+# Start the development server
+npm run dev
 
-   Edit `.env.local` and add your API keys:
-   ```env
-   ANTHROPIC_API_KEY=your-anthropic-key
-   OPENAI_API_KEY=your-openai-key
-   ```
+# Open http://localhost:3000
+```
 
-4. **Run the development server**
-   ```bash
-   npm run dev
-   ```
+### Environment Variables
 
-5. **Open in browser**
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `ANTHROPIC_API_KEY` | Yes* | Anthropic API key for Claude models |
+| `OPENAI_API_KEY` | Yes* | OpenAI API key for GPT models |
+| `OLLAMA_BASE_URL` | No | Custom Ollama endpoint (default: http://localhost:11434) |
 
-   Navigate to [http://localhost:3000](http://localhost:3000)
+*At least one API key is required.
 
-## Configuration
+## Usage Guide
 
-### LLM Providers
+### First-Time Setup
 
-Configure your preferred LLM provider in Settings:
+1. **Open Settings** (link in top-right corner)
+2. **Configure LLM Provider**: Select your preferred model
+3. **Bootstrap Style** (optional): Upload ChatGPT export to learn your style
+4. **Create Audience Profiles** (optional): Set up profiles for different contexts
 
-| Provider | Models | Notes |
-|----------|--------|-------|
-| Anthropic | Claude 3.5 Sonnet, Claude 3 Opus | Recommended for best results |
-| OpenAI | GPT-4, GPT-4 Turbo, GPT-3.5 | Good alternative |
-| Ollama | Any local model | For offline/private use |
+### Editing a Document
 
-### Style Settings
+1. **Create/Import Document**
+   - Click "+New" in the Documents panel
+   - Paste text or upload a `.txt` file
 
-Access the Settings page to configure:
-- **Base Style**: Default writing preferences
-- **Audience Profiles**: Pre-configured styles for different contexts
-- **Bootstrap**: Import ChatGPT conversations to learn your style
+2. **Select Content**
+   - Click a paragraph to select it
+   - Use Shift+click for multiple paragraphs
+
+3. **Request Edit**
+   - Add optional instruction (e.g., "make more concise")
+   - Click "Get Edit Suggestion"
+   - Wait for the agentic loop to complete
+
+4. **Review & Apply**
+   - Review the diff (inline or side-by-side)
+   - Toggle individual changes if desired
+   - Click "Apply" to accept or "Discard" to reject
+
+5. **Fine-tune**
+   - Open "Doc Profile" panel
+   - Adjust sliders based on results
+   - Add words to avoid or framing guidance
+
+### Working with Academic Papers
+
+**Example: Tightening a Methods Section**
+
+```
+Instruction: "Make more concise while preserving technical accuracy"
+Verbosity: Terse (-2)
+Formality: Formal (+2)
+Hedging: Moderate (0)
+```
+
+**Example: Softening Claims for Peer Review**
+
+```
+Instruction: "Add appropriate hedging for empirical claims"
+Verbosity: Moderate (0)
+Formality: Formal (+2)
+Hedging: Cautious (+2)
+```
+
+### Working with Grant Proposals
+
+**Example: Strengthening Impact Statements**
+
+```
+Instruction: "Make the impact more compelling and direct"
+Verbosity: Moderate (0)
+Formality: Formal (+1)
+Hedging: Confident (-1)
+```
 
 ## Project Structure
 
 ```
 src/
-├── app/                    # Next.js app router pages
-│   ├── api/               # API routes
-│   │   ├── document/      # Document editing endpoints
-│   │   ├── documents/     # Document storage endpoints
-│   │   └── preferences/   # Style preferences endpoints
-│   ├── editor/            # Main editor page
-│   └── settings/          # Settings page
-├── agents/                # LLM agent logic
-│   ├── critique-agent.ts  # Evaluates edit quality
-│   ├── edit-orchestrator.ts # Coordinates edit generation
-│   └── prompt-agent.ts    # Builds style-aware prompts
-├── components/            # React components
-│   ├── DiffView.tsx       # Inline/side-by-side diff
-│   └── DocumentProfilePanel.tsx # Document preferences UI
-├── memory/                # Data persistence
-│   ├── preference-store.ts # Style preferences storage
-│   └── document-preferences.ts # Document-specific settings
-├── providers/             # LLM provider integrations
+├── agents/                     # Agentic AI system
+│   ├── edit-orchestrator.ts   # Main coordination loop
+│   ├── critique-agent.ts      # Edit quality evaluation
+│   ├── prompt-agent.ts        # Style-aware prompt construction
+│   └── gen-alpha-agent.ts     # Easter egg: Gen Alpha mode
+├── app/
+│   ├── api/
+│   │   ├── document/          # Edit generation endpoints
+│   │   ├── documents/         # Document CRUD + preferences
+│   │   └── preferences/       # Global style preferences
+│   ├── editor/                # Main editor interface
+│   └── settings/              # Configuration UI
+├── components/
+│   ├── DiffView.tsx           # Inline + side-by-side diffs
+│   └── DocumentProfilePanel.tsx # Per-document preferences
+├── memory/
+│   ├── preference-store.ts    # Global preferences persistence
+│   └── document-preferences.ts # Document-level preferences
+├── providers/                  # LLM provider integrations
 │   ├── anthropic.ts
 │   ├── openai.ts
 │   └── ollama.ts
-└── types/                 # TypeScript type definitions
+└── types/                      # TypeScript definitions
 ```
 
-## Usage Tips
+## Configuration Reference
 
-- **Terse Mode**: Set verbosity to minimum for aggressive word reduction (targets 30-50% fewer words)
-- **Batch Editing**: Select multiple paragraphs and use "Improve Flow" for coherent multi-paragraph edits
-- **Quick Feedback**: Use the feedback buttons (Too long, Too formal, etc.) to quickly adjust preferences
-- **Side-by-side View**: Better for reviewing longer edits; shows highlighted diffs on both sides
+### Base Style Options
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `verbosity` | terse \| moderate \| detailed | Default verbosity level |
+| `formalityLevel` | 1-5 | 1=casual, 5=formal academic |
+| `hedgingStyle` | confident \| balanced \| cautious | Assertion confidence |
+| `avoidWords` | string[] | Words to never use |
+| `preferredWords` | Record<string, string> | Word substitutions |
+
+### Document Preferences
+
+| Option | Type | Range | Description |
+|--------|------|-------|-------------|
+| `verbosityAdjust` | number | -2 to +2 | Adjust from base style |
+| `formalityAdjust` | number | -2 to +2 | Adjust from base style |
+| `hedgingAdjust` | number | -2 to +2 | Adjust from base style |
+| `additionalAvoidWords` | string[] | - | Document-specific words to avoid |
+| `additionalFramingGuidance` | string[] | - | Custom instructions |
+
+## Troubleshooting
+
+### "Edit suggestions are too long/short"
+→ Adjust the Verbosity slider in Doc Profile
+
+### "Edits don't match my style"
+→ Bootstrap from your ChatGPT history, or manually adjust sliders
+
+### "Changes are too aggressive"
+→ Use the inline diff view to toggle individual changes
+
+### "API errors"
+→ Check your API key in `.env.local` and verify billing is active
+
+## Contributing
+
+Contributions are welcome! Please open an issue to discuss proposed changes before submitting a PR.
 
 ## License
 
 MIT
+
+## Acknowledgments
+
+Built with Claude Code by Anthropic.

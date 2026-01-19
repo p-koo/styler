@@ -30,6 +30,16 @@ Unlike generic AI writing tools, Styler maintains your authentic voice while imp
 Styler uses a multi-agent architecture where specialized agents collaborate to produce high-quality edits:
 
 ```
+                    ┌──────────────────────┐
+                    │ Constraint Extraction│
+                    │ Agent                │
+                    │                      │
+                    │ Parses grant calls,  │
+                    │ style guides into    │
+                    │ structured rules     │
+                    └──────────┬───────────┘
+                               │
+                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                      Edit Orchestrator                          │
 │         Coordinates the editing loop, manages retries           │
@@ -56,6 +66,7 @@ Styler uses a multi-agent architecture where specialized agents collaborate to p
 | **Edit Orchestrator** | Coordinator | Manages the edit-critique-refine loop, applies document preferences, handles retries |
 | **Prompt Agent** | Context Builder | Constructs style-aware prompts from base style, audience profiles, and document preferences |
 | **Critique Agent** | Quality Evaluator | Scores edit alignment (0-1), identifies issues, suggests improvements |
+| **Constraint Extraction Agent** | Requirements Parser | Analyzes grant calls, style guides, and submission requirements to extract structured writing constraints |
 | **Learning Agent** | Preference Updater | Analyzes accept/reject patterns, updates document profiles |
 
 ### Iterative Refinement
@@ -313,6 +324,7 @@ src/
 │   ├── edit-orchestrator.ts   # Main coordination loop
 │   ├── critique-agent.ts      # Edit quality evaluation
 │   ├── prompt-agent.ts        # Style-aware prompt construction
+│   ├── constraint-extraction-agent.ts  # Parse grant calls/style guides
 │   └── gen-alpha-agent.ts     # Easter egg: Gen Alpha mode
 ├── app/
 │   ├── api/

@@ -171,12 +171,42 @@ One-click feedback for common issues:
 
 ### Prerequisites
 
-- **Node.js 18+**
-- **npm** or **yarn**
+- **Node.js 18+** and **npm**
 - **API Key** for at least one provider:
   - [Anthropic API](https://console.anthropic.com/) (Claude) - Recommended
   - [OpenAI API](https://platform.openai.com/)
   - [Ollama](https://ollama.ai/) (local, free)
+
+#### Installing Node.js
+
+**macOS** (using Homebrew):
+```bash
+brew install node@20
+```
+
+**macOS/Linux** (using nvm - recommended):
+```bash
+# Install nvm
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+
+# Restart terminal, then install Node.js
+nvm install 20
+nvm use 20
+```
+
+**Windows** (using winget):
+```bash
+winget install OpenJS.NodeJS.LTS
+```
+
+**Windows** (using installer):
+Download from [nodejs.org](https://nodejs.org/) and run the installer.
+
+Verify installation:
+```bash
+node --version  # Should show v18.x.x or higher
+npm --version   # Should show 9.x.x or higher
+```
 
 ### Quick Start
 

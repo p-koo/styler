@@ -1,9 +1,7 @@
-<table align="center" border="0" cellspacing="0" cellpadding="0">
-  <tr>
-    <td><img src="public/logo.png" alt="Styler Logo" width="100"></td>
-    <td><h1>Styler</h1></td>
-  </tr>
-</table>
+<p align="center">
+  <img src="public/logo.png" alt="Styler Logo" height="80">
+  <img src="public/styler-text.svg" alt="Styler" height="60">
+</p>
 
 <p align="center">
   <strong>An agentic AI system for document editing that learns and applies your personal writing style.</strong><br>

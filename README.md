@@ -30,18 +30,8 @@ Unlike generic AI writing tools, Styler maintains your authentic voice while imp
 Styler uses a multi-agent architecture where specialized agents collaborate to produce high-quality edits:
 
 ```
-                    ┌──────────────────────┐
-                    │ Constraint Extraction│
-                    │ Agent                │
-                    │                      │
-                    │ Parses grant calls,  │
-                    │ style guides into    │
-                    │ structured rules     │
-                    └──────────┬───────────┘
-                               │
-                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                      Edit Orchestrator                          │
+│                     Orchestrator Agent                          │
 │         Coordinates the editing loop, manages retries           │
 └─────────────────────┬───────────────────────────────────────────┘
                       │
@@ -57,13 +47,23 @@ Styler uses a multi-agent architecture where specialized agents collaborate to p
         │                               │
         └───────────────────────────────┘
                 Feedback Loop
+
+
+┌──────────────────────────────────────┐
+│    Constraint Extraction Agent       │
+│                                      │
+│  Parses grant calls, style guides,   │
+│  and submission requirements into    │  ──▶  Document Preferences
+│  structured writing constraints      │
+└──────────────────────────────────────┘
+         (used during document setup)
 ```
 
 ### Agent Descriptions
 
 | Agent | Role | Key Functions |
 |-------|------|---------------|
-| **Edit Orchestrator** | Coordinator | Manages the edit-critique-refine loop, applies document preferences, handles retries |
+| **Orchestrator Agent** | Coordinator | Manages the edit-critique-refine loop, applies document preferences, handles retries |
 | **Prompt Agent** | Context Builder | Constructs style-aware prompts from base style, audience profiles, and document preferences |
 | **Critique Agent** | Quality Evaluator | Scores edit alignment (0-1), identifies issues, suggests improvements |
 | **Constraint Extraction Agent** | Requirements Parser | Analyzes grant calls, style guides, and submission requirements to extract structured writing constraints |
@@ -321,7 +321,7 @@ Hedging: Confident (-1)
 ```
 src/
 ├── agents/                     # Agentic AI system
-│   ├── edit-orchestrator.ts   # Main coordination loop
+│   ├── orchestrator-agent.ts  # Main coordination loop
 │   ├── critique-agent.ts      # Edit quality evaluation
 │   ├── prompt-agent.ts        # Style-aware prompt construction
 │   ├── constraint-extraction-agent.ts  # Parse grant calls/style guides

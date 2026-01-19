@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { loadPreferences } from '@/memory/preference-store';
-import { orchestrateEdit } from '@/agents/edit-orchestrator';
+import { orchestrateEdit } from '@/agents/orchestrator-agent';
 import { convertToGenAlpha } from '@/agents/gen-alpha-agent';
 import type { DocumentStructure } from '../analyze/route';
 

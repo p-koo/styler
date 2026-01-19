@@ -13,12 +13,12 @@ export default function Home() {
           <div className="flex items-center justify-center gap-4 mb-6">
             <Image
               src="/logo.png"
-              alt="Styler Logo"
+              alt="AgentStyler Logo"
               width={80}
               height={80}
               className="rounded-lg"
             />
-            <h1 className="text-5xl font-bold text-[var(--foreground)]">Styler</h1>
+            <h1 className="text-5xl font-bold text-[var(--foreground)]">AgentStyler</h1>
           </div>
           <p className="text-xl text-[var(--muted-foreground)] max-w-2xl mx-auto">
             An agentic AI system for document editing that learns and applies your personal writing style.
@@ -40,7 +40,7 @@ export default function Home() {
           <FeatureCard
             icon="🎯"
             title="Style Learning"
-            description="Upload your ChatGPT conversation history or existing documents. Styler analyzes your writing patterns to understand your unique voice."
+            description="Upload your ChatGPT conversation history or existing documents. AgentStyler analyzes your writing patterns to understand your unique voice."
           />
           <FeatureCard
             icon="🤖"
@@ -125,7 +125,7 @@ export default function Home() {
             href="/editor"
             className="inline-block px-8 py-4 text-lg font-medium bg-[var(--primary)] text-[var(--primary-foreground)] rounded-lg hover:opacity-90 transition-opacity"
           >
-            Try Styler Now
+            Try AgentStyler Now
           </Link>
           <p className="mt-4 text-sm text-[var(--muted-foreground)]">
             No account required. Your data stays on your machine.

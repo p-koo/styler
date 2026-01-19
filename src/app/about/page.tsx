@@ -13,20 +13,20 @@ export default function AboutPage() {
       <main className="max-w-4xl mx-auto px-4 py-16">
         {/* Header */}
         <div className="text-center mb-12">
-          <h1 className="text-4xl font-bold text-[var(--foreground)] mb-4">About Styler</h1>
+          <h1 className="text-4xl font-bold text-[var(--foreground)] mb-4">About AgentStyler</h1>
           <p className="text-lg text-[var(--muted-foreground)]">
             A multi-agent AI system for intelligent document editing
           </p>
         </div>
 
-        {/* What is Styler */}
+        {/* What is AgentStyler */}
         <section className="mb-12">
-          <h2 className="text-2xl font-semibold text-[var(--foreground)] mb-4">What is Styler?</h2>
+          <h2 className="text-2xl font-semibold text-[var(--foreground)] mb-4">What is AgentStyler?</h2>
           <div className="space-y-4 text-[var(--muted-foreground)]">
             <p>
-              Styler is a <strong className="text-[var(--foreground)]">multi-agent AI system</strong> designed
+              AgentStyler is a <strong className="text-[var(--foreground)]">multi-agent AI system</strong> designed
               to help researchers, academics, and professionals maintain consistent, high-quality writing.
-              Unlike generic AI writing tools that apply one-size-fits-all edits, Styler learns your unique
+              Unlike generic AI writing tools that apply one-size-fits-all edits, AgentStyler learns your unique
               voice and adapts its suggestions to match your personal style.
             </p>
             <p>
@@ -255,7 +255,7 @@ export default function AboutPage() {
         <section className="mb-12">
           <h2 className="text-2xl font-semibold text-[var(--foreground)] mb-4">Open Source</h2>
           <p className="text-[var(--muted-foreground)] mb-4">
-            Styler is open source under the MIT license. Contributions, bug reports, and feature requests are welcome.
+            AgentStyler is open source under the MIT license. Contributions, bug reports, and feature requests are welcome.
           </p>
           <a
             href="https://github.com/p-koo/styler"

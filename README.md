@@ -1,6 +1,6 @@
 <p align="center">
-  <img src="public/logo.png" alt="Styler Logo" height="80">
-  <img src="public/styler-text.svg" alt="Styler" height="60">
+  <img src="public/logo.png" alt="AgentStyler Logo" height="80">
+  <img src="public/styler-text.svg" alt="AgentStyler" height="60">
 </p>
 
 <p align="center">
@@ -18,16 +18,16 @@
 
 ---
 
-## What is Styler?
+## What is AgentStyler?
 
-Styler goes beyond simple text editing. It uses a coordinated system of **specialized AI agents** to:
+AgentStyler goes beyond simple text editing. It uses a coordinated system of **specialized AI agents** to:
 
 - **Learn your writing style** from existing work (ChatGPT exports, documents)
 - **Generate style-aligned edits** matching your preferences for verbosity, formality, and tone
 - **Critique and refine suggestions** through an iterative feedback loop
 - **Adapt continuously** based on which edits you accept or reject
 
-Unlike generic AI writing tools, Styler maintains your authentic voice while improving clarity and consistency.
+Unlike generic AI writing tools, AgentStyler maintains your authentic voice while improving clarity and consistency.
 
 ## Quick Start
 

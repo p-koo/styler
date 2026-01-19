@@ -41,13 +41,13 @@ export default function Header({ currentPage }: HeaderProps) {
           >
             <Image
               src="/logo.png"
-              alt="Styler Logo"
+              alt="AgentStyler Logo"
               width={32}
               height={32}
               className="rounded"
             />
             <span className="text-xl font-semibold text-[var(--foreground)]">
-              Styler
+              AgentStyler
             </span>
             <svg
               className={`w-4 h-4 text-[var(--muted-foreground)] transition-transform ${menuOpen ? 'rotate-180' : ''}`}

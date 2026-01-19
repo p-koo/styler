@@ -1,6 +1,8 @@
 <p align="center">
-  <img src="logo.svg" alt="Styler Logo" width="400">
+  <img src="public/logo.png" alt="Styler Logo" width="150">
 </p>
+
+<h1 align="center">Styler</h1>
 
 <p align="center">
   An agentic AI system for document editing that learns and applies your personal writing style.<br>

@@ -30,44 +30,64 @@ Unlike generic AI writing tools, Styler maintains your authentic voice while imp
 Styler uses a multi-agent architecture where specialized agents collaborate to produce high-quality edits:
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                     Orchestrator Agent                          │
-│         Coordinates the editing loop, manages retries           │
-└─────────────────────┬───────────────────────────────────────────┘
-                      │
-        ┌─────────────┼─────────────┐
-        ▼             ▼             ▼
-┌──────────────┐ ┌──────────────┐ ┌──────────────┐
-│ Prompt Agent │ │ Edit Agent   │ │Critique Agent│
-│              │ │              │ │              │
-│ Builds style-│ │ Generates    │ │ Evaluates    │
-│ aware system │ │ the actual   │ │ alignment &  │
-│ prompts      │ │ text edits   │ │ quality      │
-└──────────────┘ └──────────────┘ └──────────────┘
-        │                               │
-        └───────────────────────────────┘
-                Feedback Loop
-
-
-┌──────────────────────────────────────┐
-│    Constraint Extraction Agent       │
-│                                      │
-│  Parses grant calls, style guides,   │
-│  and submission requirements into    │  ──▶  Document Preferences
-│  structured writing constraints      │
-└──────────────────────────────────────┘
-         (used during document setup)
+┌─────────────────────┐     ┌─────────────────────┐
+│   Grant Call /      │     │   Audience Profile  │
+│   Style Guide       │     │   (from Settings)   │
+└─────────┬───────────┘     └──────────┬──────────┘
+          │                            │
+          ▼                            │
+┌─────────────────────┐                │
+│ Constraint          │                │
+│ Extraction Agent    │                │
+│                     │                │
+│ Parses requirements │                │
+│ into structured     │                │
+│ constraints         │                │
+└─────────┬───────────┘                │
+          │                            │
+          ▼                            │
+┌─────────────────────┐                │
+│  Document Profile   │                │
+│  (per-document      │                │
+│   preferences)      │◀───────────────┘
+└─────────┬───────────┘
+          │
+          │         ┌─────────────────────┐
+          │         │   User Input        │
+          │         │   (text + instruction)
+          │         └─────────┬───────────┘
+          │                   │
+          ▼                   ▼
+┌───────────────────────────────────────────────────────────────┐
+│                     Orchestrator Agent                        │
+│              Coordinates the edit-critique loop               │
+│                                                               │
+│  ┌─────────────┐      ┌─────────┐      ┌──────────────┐      │
+│  │Prompt Agent │ ───▶ │  LLM    │ ───▶ │Critique Agent│      │
+│  │             │      │ (edit)  │      │              │      │
+│  │Builds style-│      └─────────┘      │Evaluates     │      │
+│  │aware prompt │                       │alignment     │      │
+│  └─────────────┘                       └──────┬───────┘      │
+│        ▲                                      │              │
+│        │           Refine if needed           │              │
+│        └──────────────────────────────────────┘              │
+└───────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+                   ┌─────────────────┐
+                   │ Suggested Edit  │
+                   └─────────────────┘
 ```
 
 ### Agent Descriptions
 
 | Agent | Role | Key Functions |
 |-------|------|---------------|
-| **Orchestrator Agent** | Coordinator | Manages the edit-critique-refine loop, applies document preferences, handles retries |
-| **Prompt Agent** | Context Builder | Constructs style-aware prompts from base style, audience profiles, and document preferences |
-| **Critique Agent** | Quality Evaluator | Scores edit alignment (0-1), identifies issues, suggests improvements |
-| **Constraint Extraction Agent** | Requirements Parser | Analyzes grant calls, style guides, and submission requirements to extract structured writing constraints |
-| **Learning Agent** | Preference Updater | Analyzes accept/reject patterns, updates document profiles |
+| **Orchestrator Agent** | Coordinator | Manages the edit-critique-refine loop, handles retries until quality threshold is met |
+| **Prompt Agent** | Context Builder | Constructs style-aware prompts from audience profile and document preferences |
+| **Critique Agent** | Quality Evaluator | Scores edit alignment (0-1), identifies style issues, suggests improvements |
+| **Constraint Extraction Agent** | Requirements Parser | Analyzes grant calls, style guides, and submission requirements; extracts structured constraints into document profile |
+| **Learning Agent** | Preference Updater | Analyzes accept/reject patterns, updates document profile over time |
 
 ### Iterative Refinement
 

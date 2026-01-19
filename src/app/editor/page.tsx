@@ -67,6 +67,42 @@ interface Document {
 
 const MODEL_STORAGE_KEY = 'preference-editor-model';
 
+// Auto-detect syntax mode from content
+function detectSyntaxMode(content: string): HighlightMode {
+  // Check for LaTeX patterns
+  const latexPatterns = [
+    /\\(?:documentclass|usepackage|begin|end|section|subsection|textbf|textit|cite|ref)\b/,
+    /\\[a-zA-Z]+\{/,  // Commands with arguments
+    /\$[^$]+\$/,      // Inline math
+    /\$\$[\s\S]+?\$\$/, // Display math
+    /\\(?:alpha|beta|gamma|delta|epsilon|theta|lambda|mu|sigma|omega)\b/, // Greek letters
+  ];
+
+  const latexScore = latexPatterns.reduce((score, pattern) =>
+    score + (pattern.test(content) ? 1 : 0), 0);
+
+  // Check for Markdown patterns
+  const markdownPatterns = [
+    /^#{1,6}\s+/m,           // Headers
+    /\*\*[^*]+\*\*/,         // Bold
+    /\*[^*]+\*/,             // Italic
+    /`[^`]+`/,               // Inline code
+    /```[\s\S]*?```/,        // Code blocks
+    /\[[^\]]+\]\([^)]+\)/,   // Links
+    /^[-*]\s+/m,             // Unordered lists
+    /^\d+\.\s+/m,            // Ordered lists
+  ];
+
+  const markdownScore = markdownPatterns.reduce((score, pattern) =>
+    score + (pattern.test(content) ? 1 : 0), 0);
+
+  // Require at least 2 matches to detect
+  if (latexScore >= 2) return 'latex';
+  if (markdownScore >= 2) return 'markdown';
+
+  return 'plain';
+}
+
 interface SavedDocumentInfo {
   id: string;
   title: string;
@@ -283,6 +319,7 @@ export default function EditorPage() {
             paragraphs: document.paragraphs,
             structure: document.structure,
             selectedProfileId: activeProfile,
+            syntaxMode: editorMode,
           }),
         });
         // Silently refresh documents list
@@ -297,7 +334,7 @@ export default function EditorPage() {
         clearTimeout(autoSaveTimeoutRef.current);
       }
     };
-  }, [document, loadDocumentsList, activeProfile]);
+  }, [document, loadDocumentsList, activeProfile, editorMode]);
 
   // Export document as .txt file
   const handleExportDocument = useCallback(() => {
@@ -351,6 +388,16 @@ export default function EditorPage() {
       // Restore the profile that was selected for this document
       if (loadedDoc.selectedProfileId !== undefined) {
         setActiveProfile(loadedDoc.selectedProfileId);
+      }
+
+      // Restore or auto-detect syntax mode
+      if (loadedDoc.syntaxMode) {
+        setEditorMode(loadedDoc.syntaxMode);
+      } else {
+        // Auto-detect from content
+        const fullContent = loadedDoc.paragraphs.map((p: { content: string }) => p.content).join('\n');
+        const detected = detectSyntaxMode(fullContent);
+        setEditorMode(detected);
       }
     } catch (e) {
       console.error('Failed to load document:', e);
@@ -424,6 +471,10 @@ export default function EditorPage() {
 
     setDocument(newDoc);
     clearSelection();
+
+    // Auto-detect syntax mode from content
+    const detectedMode = detectSyntaxMode(text);
+    setEditorMode(detectedMode);
 
     // Analyze structure in background
     const structure = await analyzeDocument(paragraphTexts);
@@ -901,6 +952,7 @@ export default function EditorPage() {
     setDocument(newDoc);
     setSelectedParagraphs(new Set());
     setLastSelectedIndex(null);
+    setEditorMode('plain'); // Reset to plain for new document
     setShowAIGenerate(true); // Show AI panel to help start
   }, []);
 

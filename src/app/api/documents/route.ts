@@ -37,6 +37,7 @@ export interface SavedDocument {
     mainArgument: string;
   };
   selectedProfileId?: string | null;  // Remember which profile was selected for this document
+  syntaxMode?: 'plain' | 'markdown' | 'latex';  // Syntax highlighting mode
   createdAt: string;
   updatedAt: string;
 }

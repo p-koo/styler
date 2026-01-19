@@ -36,6 +36,7 @@ export interface SavedDocument {
     keyTerms: string[];
     mainArgument: string;
   };
+  selectedProfileId?: string | null;  // Remember which profile was selected for this document
   createdAt: string;
   updatedAt: string;
 }
@@ -93,7 +94,7 @@ export async function POST(request: NextRequest) {
     await ensureDir();
 
     const body = await request.json();
-    const { id, title, paragraphs, structure } = body;
+    const { id, title, paragraphs, structure, selectedProfileId } = body;
 
     if (!id || !title) {
       return NextResponse.json(
@@ -119,6 +120,7 @@ export async function POST(request: NextRequest) {
       title,
       paragraphs: paragraphs || [],
       structure,
+      selectedProfileId: selectedProfileId ?? null,
       createdAt,
       updatedAt: new Date().toISOString(),
     };

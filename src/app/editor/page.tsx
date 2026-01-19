@@ -182,6 +182,7 @@ export default function EditorPage() {
             title: document.title,
             paragraphs: document.paragraphs,
             structure: document.structure,
+            selectedProfileId: activeProfile,
           }),
         });
         // Silently refresh documents list
@@ -196,7 +197,7 @@ export default function EditorPage() {
         clearTimeout(autoSaveTimeoutRef.current);
       }
     };
-  }, [document, loadDocumentsList]);
+  }, [document, loadDocumentsList, activeProfile]);
 
   // Export document as .txt file
   const handleExportDocument = useCallback(() => {
@@ -242,10 +243,15 @@ export default function EditorPage() {
       if (!res.ok) throw new Error('Failed to load');
 
       const data = await res.json();
-      const loadedDoc = data.document as Document;
-      setDocument(loadedDoc);
+      const loadedDoc = data.document;
+      setDocument(loadedDoc as Document);
       setSelectedParagraphs(new Set());
       setLastSelectedIndex(null);
+
+      // Restore the profile that was selected for this document
+      if (loadedDoc.selectedProfileId !== undefined) {
+        setActiveProfile(loadedDoc.selectedProfileId);
+      }
     } catch (e) {
       console.error('Failed to load document:', e);
       alert('Failed to load document');

@@ -442,17 +442,18 @@ export function detectSyntaxMode(content: string): SyntaxMode {
 
 /**
  * Clean up cells: split, merge, and format for visual clarity
+ * - Normalizes whitespace first (collapse blank lines)
  * - Splits large cells with multiple logical sections
  * - Merges tiny cells that belong together
- * - Normalizes whitespace within cells
  */
 export function cleanupCells(cells: string[], syntaxMode: SyntaxMode): string[] {
-  // For LaTeX, preserve single newlines since they have semantic meaning
-  // For other modes, use double newlines as paragraph separators
+  // First, join all cells and normalize whitespace
   const separator = syntaxMode === 'latex' ? '\n' : '\n\n';
+  let fullContent = cells.join(separator);
 
-  // Join all cells
-  const fullContent = cells.join(separator);
+  // Pre-process: normalize whitespace before splitting
+  // This is crucial for documents pasted with extra blank lines
+  fullContent = normalizeDocumentWhitespace(fullContent);
 
   // Re-split using smart logic
   let result = smartSplit(fullContent, { syntaxMode });
@@ -460,10 +461,43 @@ export function cleanupCells(cells: string[], syntaxMode: SyntaxMode): string[] 
   // Post-process: merge very small cells
   result = mergeRelatedCells(result, syntaxMode);
 
-  // Clean up whitespace in each cell
+  // Final cleanup of each cell
   result = result.map(cell => cleanupWhitespace(cell, syntaxMode));
 
   return result;
+}
+
+/**
+ * Normalize whitespace in a document before splitting
+ * - Collapse multiple blank lines to single blank line
+ * - Remove trailing whitespace
+ */
+function normalizeDocumentWhitespace(content: string): string {
+  // Split into lines
+  let lines = content.split('\n');
+
+  // Remove trailing whitespace from each line
+  lines = lines.map(line => line.trimEnd());
+
+  // Collapse multiple consecutive blank lines into one
+  const result: string[] = [];
+  let prevWasBlank = false;
+
+  for (const line of lines) {
+    const isBlank = line.trim() === '';
+
+    if (isBlank) {
+      if (!prevWasBlank) {
+        result.push('');
+      }
+      prevWasBlank = true;
+    } else {
+      result.push(line);
+      prevWasBlank = false;
+    }
+  }
+
+  return result.join('\n');
 }
 
 // Keep old name as alias for backwards compatibility

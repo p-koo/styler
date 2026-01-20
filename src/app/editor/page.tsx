@@ -2060,15 +2060,6 @@ export default function EditorPage() {
                   💾
                 </button>
 
-                {/* Clean up cells */}
-                <button
-                  onClick={handleCleanup}
-                  className="p-2 rounded-lg border border-[var(--border)] hover:bg-[var(--muted)]"
-                  title="Clean up (split, merge, format)"
-                >
-                  🧹
-                </button>
-
                 {/* History */}
                 <button
                   onClick={() => setShowHistory(!showHistory)}
@@ -2971,6 +2962,16 @@ export default function EditorPage() {
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16m-7 6h7" />
                                   </svg>
                                   Merge
+                                </button>
+                                <button
+                                  onClick={handleCleanup}
+                                  className="flex-1 py-1.5 text-xs border border-[var(--border)] rounded-lg hover:bg-[var(--muted)] flex items-center justify-center gap-1.5"
+                                  title="Clean up: smart split, merge small cells, format whitespace"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+                                  </svg>
+                                  Clean
                                 </button>
                               </div>
                             </div>

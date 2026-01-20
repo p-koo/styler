@@ -22,7 +22,7 @@ import {
   type DocumentSnapshot,
   type DocumentHistory,
 } from '@/memory/document-history';
-import { smartSplit, reorganizeCells, type SyntaxMode } from '@/utils/smart-split';
+import { smartSplit, cleanupCells, type SyntaxMode } from '@/utils/smart-split';
 
 interface DocumentSection {
   id: string;
@@ -1389,14 +1389,14 @@ export default function EditorPage() {
     setShowNewDocModal(false);
   }, [newDocMode, pasteContent, newDocTitle]);
 
-  // Reorganize cells using smart splitting based on syntax mode
-  const handleReorganize = useCallback(() => {
+  // Clean up cells: split, merge, and normalize whitespace
+  const handleCleanup = useCallback(() => {
     if (!document || document.cells.length === 0) return;
 
     const currentContents = document.cells.map(c => c.content);
-    const reorganized = reorganizeCells(currentContents, editorMode as SyntaxMode);
+    const cleaned = cleanupCells(currentContents, editorMode as SyntaxMode);
 
-    const newCells: Cell[] = reorganized.map((content, index) => ({
+    const newCells: Cell[] = cleaned.map((content, index) => ({
       id: `cell-${Date.now()}-${index}`,
       index,
       content,
@@ -2060,11 +2060,11 @@ export default function EditorPage() {
                   💾
                 </button>
 
-                {/* Reorganize cells */}
+                {/* Clean up cells */}
                 <button
-                  onClick={handleReorganize}
+                  onClick={handleCleanup}
                   className="p-2 rounded-lg border border-[var(--border)] hover:bg-[var(--muted)]"
-                  title="Reorganize cells (smart split based on syntax)"
+                  title="Clean up (split, merge, format)"
                 >
                   🧹
                 </button>

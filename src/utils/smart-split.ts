@@ -441,11 +441,12 @@ export function detectSyntaxMode(content: string): SyntaxMode {
 }
 
 /**
- * Reorganize existing cells using smart logic
- * Takes an array of cell contents and reorganizes them
- * Handles both splitting (large cells with multiple sections) and merging (tiny cells)
+ * Clean up cells: split, merge, and format for visual clarity
+ * - Splits large cells with multiple logical sections
+ * - Merges tiny cells that belong together
+ * - Normalizes whitespace within cells
  */
-export function reorganizeCells(cells: string[], syntaxMode: SyntaxMode): string[] {
+export function cleanupCells(cells: string[], syntaxMode: SyntaxMode): string[] {
   // For LaTeX, preserve single newlines since they have semantic meaning
   // For other modes, use double newlines as paragraph separators
   const separator = syntaxMode === 'latex' ? '\n' : '\n\n';
@@ -456,10 +457,61 @@ export function reorganizeCells(cells: string[], syntaxMode: SyntaxMode): string
   // Re-split using smart logic
   let result = smartSplit(fullContent, { syntaxMode });
 
-  // Post-process: additional merging for very small cells
+  // Post-process: merge very small cells
   result = mergeRelatedCells(result, syntaxMode);
 
+  // Clean up whitespace in each cell
+  result = result.map(cell => cleanupWhitespace(cell, syntaxMode));
+
   return result;
+}
+
+// Keep old name as alias for backwards compatibility
+export const reorganizeCells = cleanupCells;
+
+/**
+ * Clean up whitespace within a cell
+ * - Remove trailing whitespace from lines
+ * - Normalize multiple blank lines to single blank line
+ * - Remove leading/trailing blank lines
+ */
+function cleanupWhitespace(content: string, syntaxMode: SyntaxMode): string {
+  let lines = content.split('\n');
+
+  // Remove trailing whitespace from each line
+  lines = lines.map(line => line.trimEnd());
+
+  // Collapse multiple consecutive blank lines into one
+  const result: string[] = [];
+  let prevWasBlank = false;
+
+  for (const line of lines) {
+    const isBlank = line.trim() === '';
+
+    if (isBlank) {
+      if (!prevWasBlank) {
+        // Keep first blank line (paragraph separator)
+        result.push('');
+      }
+      // Skip additional consecutive blank lines
+      prevWasBlank = true;
+    } else {
+      result.push(line);
+      prevWasBlank = false;
+    }
+  }
+
+  // Remove leading blank lines
+  while (result.length > 0 && result[0].trim() === '') {
+    result.shift();
+  }
+
+  // Remove trailing blank lines
+  while (result.length > 0 && result[result.length - 1].trim() === '') {
+    result.pop();
+  }
+
+  return result.join('\n');
 }
 
 /**

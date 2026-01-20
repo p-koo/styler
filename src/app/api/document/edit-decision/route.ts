@@ -4,8 +4,14 @@ import {
   getOrCreateDocumentPreferences,
   saveDocumentPreferences,
 } from '@/memory/document-preferences';
-import { learnFromDecision, analyzeEditPatterns, getEditStats } from '@/agents/critique-agent';
-import type { EditDecision, EditDecisionType, CritiqueAnalysis } from '@/types';
+import {
+  learnFromDecision,
+  analyzeEditPatterns,
+  getEditStats,
+  learnFromExplicitFeedback,
+  learnFromDiff,
+} from '@/agents/critique-agent';
+import type { EditDecision, EditDecisionType, CritiqueAnalysis, FeedbackCategory } from '@/types';
 
 /**
  * POST /api/document/edit-decision
@@ -26,6 +32,7 @@ export async function POST(request: NextRequest) {
       critiqueAnalysis,
       profileId,
       model,
+      feedback, // Explicit feedback categories from user
     } = body as {
       documentId: string;
       cellIndex: number;
@@ -37,6 +44,7 @@ export async function POST(request: NextRequest) {
       critiqueAnalysis?: CritiqueAnalysis;
       profileId?: string;
       model?: string;
+      feedback?: FeedbackCategory[];
     };
 
     // Validate required fields
@@ -85,6 +93,32 @@ export async function POST(request: NextRequest) {
     const learnedInsights: string[] = [];
 
     try {
+      // 1. If explicit feedback provided, learn from it (highest signal)
+      if (feedback && feedback.length > 0) {
+        documentPrefs = learnFromExplicitFeedback({
+          feedback,
+          documentPreferences: documentPrefs,
+          suggestedEdit: suggestedEdit || '',
+          userVersion: finalText || '',
+          instruction,
+        });
+        learnedInsights.push(`Learned from explicit feedback: ${feedback.join(', ')}`);
+      }
+
+      // 2. If REJECTION with user edits, learn from diff
+      // IMPORTANT: Only learn from rejections, NOT accepts
+      // Accepts are contextual - the word choice was right for THAT context
+      // Rejections show what the user consistently DOESN'T want
+      if (decision === 'rejected' && suggestedEdit && finalText && suggestedEdit !== finalText) {
+        documentPrefs = learnFromDiff({
+          suggestedEdit,
+          userVersion: finalText,
+          documentPreferences: documentPrefs,
+        });
+        learnedInsights.push('Learned from word-level diff analysis (rejection)');
+      }
+
+      // 3. Standard learning from decision (LLM-based inference)
       documentPrefs = await learnFromDecision({
         decision: editDecision,
         documentPreferences: documentPrefs,
@@ -110,6 +144,16 @@ export async function POST(request: NextRequest) {
           `Hedging preference: ${adj.hedgingAdjust > 0 ? 'more cautious' : 'more confident'}`
         );
       }
+      if (adj.editExamples && adj.editExamples.length > 0) {
+        learnedInsights.push(`Stored ${adj.editExamples.length} edit examples`);
+      }
+      if (adj.diffPatterns && adj.diffPatterns.length > 0) {
+        const highConfPatterns = adj.diffPatterns.filter(p => p.confidence >= 0.7);
+        if (highConfPatterns.length > 0) {
+          learnedInsights.push(`Detected ${highConfPatterns.length} consistent patterns`);
+        }
+      }
+
       // Save the updated preferences (with decision added to history)
       await saveDocumentPreferences(documentPrefs);
     } catch (learnError) {

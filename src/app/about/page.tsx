@@ -38,7 +38,9 @@ export default function AboutPage() {
 
         {/* Architecture Diagram */}
         <section className="mb-12">
-          <h2 className="text-2xl font-semibold text-[var(--foreground)] mb-4">ADAPT: Multi-Agent Architecture</h2>
+          <h2 className="text-2xl font-semibold text-[var(--foreground)] mb-4">
+            ADAPT: Adaptive Document Alignment via Prompt Transformations
+          </h2>
           <p className="text-[var(--muted-foreground)] mb-6">
             When you request an edit, ADAPT's specialized agents collaborate to produce style-aligned suggestions:
           </p>
@@ -46,53 +48,67 @@ export default function AboutPage() {
           {/* Visual Architecture Diagram */}
           <div className="bg-[var(--muted)] rounded-lg p-6 mb-6 overflow-x-auto">
             <pre className="text-xs sm:text-sm font-mono text-[var(--foreground)] whitespace-pre leading-relaxed">
-{`┌─────────────────────┐     ┌─────────────────────┐
-│   Grant Call /      │     │   Audience Profile  │
-│   Style Guide       │     │   (from Settings)   │
-└─────────┬───────────┘     └──────────┬──────────┘
-          │                            │
-          ▼                            │
-┌─────────────────────┐                │
-│ Constraint          │                │
-│ Extraction Agent    │                │
-│                     │                │
-│ Parses requirements │                │
-│ into structured     │                │
-│ constraints         │                │
-└─────────┬───────────┘                │
-          │                            │
-          ▼                            │
-┌─────────────────────┐                │
-│  Document Profile   │◀───────────────┘
-│  (per-document      │
-│   preferences)      │
-└─────────┬───────────┘
-          │
-          │         ┌─────────────────────┐
-          │         │   User Input        │
-          │         │   (text + instruction)
-          │         └─────────┬───────────┘
-          │                   │
-          ▼                   ▼
-┌───────────────────────────────────────────────────────┐
-│                 Orchestrator Agent                    │
-│          Coordinates the edit-critique loop           │
-│                                                       │
-│  ┌─────────────┐   ┌─────────┐   ┌──────────────┐    │
-│  │Prompt Agent │──▶│   LLM   │──▶│Critique Agent│    │
-│  │             │   │ (edit)  │   │              │    │
-│  │Builds style-│   └─────────┘   │Evaluates     │    │
-│  │aware prompt │                 │alignment     │    │
-│  └─────────────┘                 └──────┬───────┘    │
-│        ▲                                │            │
-│        │       Refine if needed         │            │
-│        └────────────────────────────────┘            │
-└───────────────────────────────────────────────────────┘
-                          │
-                          ▼
-                 ┌─────────────────┐
-                 │ Suggested Edit  │
-                 └─────────────────┘`}
+{`┌───────────────────────┐       ┌───────────────────────┐
+│    Grant Call /       │       │    Audience Profile   │
+│    Style Guide        │       │    (from Settings)    │
+└───────────┬───────────┘       └───────────┬───────────┘
+            │                               │
+            ▼                               │
+┌───────────────────────┐                   │
+│ Constraint Extraction │                   │
+│ Agent                 │                   │
+└───────────┬───────────┘                   │
+            │                               │
+            ▼                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│                      Document Profile                       │
+│                                                             │
+│  ┌───────────────┐ ┌───────────────┐ ┌───────────────────┐ │
+│  │ Style Sliders │ │ Words &       │ │ Document Goals    │ │
+│  │               │ │ Guidance      │ │ (Intent Agent     │ │
+│  │               │ │               │ │  synthesizes)     │ │
+│  └───────────────┘ └───────────────┘ └───────────────────┘ │
+└─────────────────────────────┬───────────────────────────────┘
+                              │
+            ┌─────────────────┴─────────────────┐
+            │                                   │
+            ▼                                   ▼
+┌───────────────────────┐       ┌───────────────────────┐
+│    User Input         │       │    Document Content   │
+│    (text+instruction) │       │                       │
+└───────────┬───────────┘       └───────────┬───────────┘
+            │                               │
+            └───────────────┬───────────────┘
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│                     Orchestrator Agent                      │
+│                                                             │
+│  ┌───────────────────────────────────────────────────────┐ │
+│  │ 1. Intent Agent analyzes paragraph purpose            │ │
+│  │    (connects to document goals)                       │ │
+│  └───────────────────────────┬───────────────────────────┘ │
+│                              ▼                              │
+│  ┌───────────────┐     ┌───────────┐     ┌───────────────┐ │
+│  │ Prompt Agent  │────▶│    LLM    │────▶│Critique Agent │ │
+│  │               │     │  (edit)   │     │               │ │
+│  │ Builds prompt │     └───────────┘     │ Scores edit   │ │
+│  │ with style,   │                       │ alignment     │ │
+│  │ intent, goals │                       └───────┬───────┘ │
+│  └───────────────┘                               │         │
+│         ▲                                        │         │
+│         │            Refine if < 0.8             │         │
+│         └────────────────────────────────────────┘         │
+└─────────────────────────────┬───────────────────────────────┘
+                              │
+                              ▼
+                  ┌───────────────────────┐
+                  │    Suggested Edit     │
+                  └───────────┬───────────┘
+                              │
+                              ▼ User Accept/Reject
+                  ┌───────────────────────┐
+                  │    Learning Agent     │──▶ Updates Profile
+                  └───────────────────────┘`}
             </pre>
           </div>
         </section>
@@ -111,10 +127,23 @@ export default function AboutPage() {
               summary="Coordinates the entire edit-critique-refine loop"
               details={[
                 "Receives user input (selected text + optional instruction)",
+                "Calls Intent Agent to analyze paragraph purpose before editing",
                 "Manages up to 3 refinement iterations if quality threshold isn't met",
                 "Tracks convergence history and alignment scores",
-                "Returns the best edit with critique analysis attached",
-                "Handles fallback to direct edit if orchestration fails"
+                "Returns the best edit with critique analysis attached"
+              ]}
+            />
+
+            <AgentDetail
+              name="Intent Agent"
+              icon="🎪"
+              summary="Analyzes paragraph intent and synthesizes document goals"
+              details={[
+                "Synthesizes document goals from content (summary, objectives, main argument)",
+                "Analyzes each paragraph's purpose within the document's goals",
+                "Identifies how paragraphs connect to previous/next content",
+                "Ensures edits preserve the paragraph's role in achieving document goals",
+                "Goals can be locked by user to prevent auto-updates"
               ]}
             />
 
@@ -124,10 +153,10 @@ export default function AboutPage() {
               summary="Builds context-aware prompts from your style preferences"
               details={[
                 "Combines base style settings (verbosity, formality, hedging)",
+                "Includes document goals and paragraph intent from Intent Agent",
                 "Merges audience profile preferences (jargon level, emphasis points)",
                 "Applies document-specific adjustments from sliders",
-                "Includes words to avoid and preferred substitutions",
-                "Adds section-specific guidance (e.g., 'This is the METHODS section...')"
+                "Adds section-specific guidance and surrounding context"
               ]}
             />
 
@@ -163,9 +192,9 @@ export default function AboutPage() {
               summary="Learns from your accept/reject decisions over time"
               details={[
                 "Records every edit decision with full context",
-                "Analyzes patterns in accepted vs rejected edits",
-                "Adjusts document preferences based on feedback",
-                "Identifies systematic preferences (e.g., 'user always shortens')",
+                "Analyzes patterns in rejected edits (not accepts, to avoid overfitting)",
+                "Adjusts document preferences based on explicit feedback",
+                "Consolidates similar rules into stronger directives",
                 "Can merge learned preferences back to audience profiles"
               ]}
             />
@@ -183,26 +212,31 @@ export default function AboutPage() {
             />
             <FlowStep
               number={2}
-              title="Prompt Agent builds a style-aware prompt"
-              description="Your preferences, profile settings, and document context are combined into a comprehensive prompt for the LLM."
+              title="Intent Agent analyzes paragraph purpose"
+              description="The paragraph's role is analyzed within the document's goals—how it connects to surrounding content and contributes to objectives."
             />
             <FlowStep
               number={3}
-              title="LLM generates an initial edit"
-              description="The language model produces an edit suggestion based on the constructed prompt."
+              title="Prompt Agent builds a goal-aware prompt"
+              description="Your preferences, paragraph intent, document goals, and context are combined into a comprehensive prompt."
             />
             <FlowStep
               number={4}
+              title="LLM generates an initial edit"
+              description="The language model produces an edit suggestion that aligns with both style preferences and document goals."
+            />
+            <FlowStep
+              number={5}
               title="Critique Agent evaluates alignment"
               description="The edit is scored for style alignment. If below threshold, specific issues are identified."
             />
             <FlowStep
-              number={5}
+              number={6}
               title="Refinement loop (if needed)"
               description="If alignment < 0.8, the system refines the edit using critique feedback. Up to 3 iterations."
             />
             <FlowStep
-              number={6}
+              number={7}
               title="You review and decide"
               description="See the diff, toggle individual changes, then accept or reject. Your decision helps the system learn."
             />
@@ -213,6 +247,10 @@ export default function AboutPage() {
         <section className="mb-12">
           <h2 className="text-2xl font-semibold text-[var(--foreground)] mb-4">Key Features</h2>
           <div className="grid md:grid-cols-2 gap-4">
+            <FeatureCard
+              title="Document Goals"
+              description="Auto-synthesized objectives guide edits. Lock goals to prevent drift or edit them manually."
+            />
             <FeatureCard
               title="Vibe Edit"
               description="Document-level analysis for clarity, structure, and flow. Apply intelligent suggestions directly."
@@ -236,6 +274,10 @@ export default function AboutPage() {
             <FeatureCard
               title="Version History"
               description="Undo/redo with full history. Compare any two versions."
+            />
+            <FeatureCard
+              title="Adaptive Learning"
+              description="Learns from rejections, not accepts. Consolidates rules. Conservative word learning."
             />
           </div>
         </section>

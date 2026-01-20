@@ -13,6 +13,8 @@ import type {
   DocumentAdjustments,
   CritiqueAnalysis,
   CritiqueIssue,
+  ParagraphIntent,
+  DocumentGoals,
 } from '@/types';
 import { createProvider, getDefaultProviderConfig } from '@/providers/base';
 import { buildSystemPrompt } from './prompt-agent';
@@ -26,6 +28,7 @@ import {
   getOrCreateDocumentPreferences,
   saveDocumentPreferences,
 } from '@/memory/document-preferences';
+import { analyzeIntent } from './intent-agent';
 
 // Orchestrator configuration
 const CONFIG = {
@@ -124,6 +127,30 @@ export async function orchestrateEdit(
     );
   }
 
+  // Get document goals from preferences
+  const documentGoals = documentPrefs.adjustments.documentGoals;
+
+  // Analyze paragraph intent (considers document goals)
+  let paragraphIntent: ParagraphIntent | undefined;
+  try {
+    const previousParagraph = cellIndex > 0 ? cells[cellIndex - 1] : undefined;
+    const nextParagraph = cellIndex < cells.length - 1 ? cells[cellIndex + 1] : undefined;
+
+    paragraphIntent = await analyzeIntent({
+      paragraph: currentCell,
+      previousParagraph,
+      nextParagraph,
+      sectionName: currentSection?.name,
+      sectionPurpose: currentSection?.purpose,
+      documentGoals,
+      documentTitle: documentStructure?.title,
+      model,
+    });
+  } catch (error) {
+    console.error('Intent analysis error:', error);
+    // Continue without intent - it's not critical
+  }
+
   // Orchestration loop
   for (let attempt = 1; attempt <= CONFIG.maxRetries; attempt++) {
     iterations = attempt;
@@ -142,6 +169,8 @@ export async function orchestrateEdit(
       baseStyle: adjustedStyle,
       audienceProfile,
       documentAdjustments: documentPrefs.adjustments,
+      paragraphIntent,
+      documentGoals,
       previousAttempt: attempt > 1 ? bestEdit : undefined,
       previousIssues: attempt > 1 ? bestCritique.issues : undefined,
     });
@@ -241,6 +270,8 @@ async function generateEdit(params: {
   baseStyle: BaseStyle;
   audienceProfile?: AudienceProfile;
   documentAdjustments?: DocumentAdjustments;
+  paragraphIntent?: ParagraphIntent;
+  documentGoals?: DocumentGoals;
   previousAttempt?: string;
   previousIssues?: CritiqueIssue[];
 }): Promise<string> {
@@ -254,6 +285,8 @@ async function generateEdit(params: {
     baseStyle,
     audienceProfile,
     documentAdjustments,
+    paragraphIntent,
+    documentGoals,
     previousAttempt,
     previousIssues,
   } = params;
@@ -276,10 +309,29 @@ async function generateEdit(params: {
   const afterCells = cells.slice(cellIndex + 1, endAfter);
 
   // Detect if this is a generation/expansion request vs a pure edit
+  // BE CAREFUL: Only trigger generation mode for clear generation requests
+  // Regular edit instructions should NOT trigger this (e.g., "improve the argument" is editing, not generation)
   const instructionLower = (instruction || '').toLowerCase();
+
+  // Check for explicit generation verbs FOLLOWED by content type
+  const hasGenerationVerb = /\b(generate|write|create|draft|compose|produce)\b/.test(instructionLower);
+  const hasExpansionVerb = /\b(expand|elaborate|develop|flesh\s*out|add\s+more|continue)\b/.test(instructionLower);
+
+  // Content type words that WITH a generation verb indicate generation
+  const hasContentType = /\b(text|content|paragraph|section|abstract|introduction|conclusion|perspective|overview)\b/.test(instructionLower);
+
+  // Specific phrases that clearly indicate generation
+  const hasGenerationPhrase =
+    /\b(generate|write|create)\s+(a|an|the|new|more)\s+\w+/i.test(instructionLower) ||
+    /\badd\s+(a|an)\s+(new\s+)?(paragraph|section|abstract|introduction)/i.test(instructionLower) ||
+    /\bstructured?\s+correctly/i.test(instructionLower);
+
+  // Generation mode: only when there's a clear generation intent
+  // NOT for regular edits like "improve structure" or "clarify the argument"
   const isGenerationRequest =
-    /\b(generate|write|create|add|draft|compose|introduce|expand|elaborate)\b/.test(instructionLower) ||
-    /\b(abstract|introduction|conclusion|summary|section|paragraph)\b/.test(instructionLower);
+    (hasGenerationVerb && hasContentType) ||
+    hasExpansionVerb ||
+    hasGenerationPhrase;
 
   // Build syntax mode instructions
   const getSyntaxInstructions = (mode?: SyntaxMode): string => {
@@ -318,10 +370,27 @@ This is a code document. You MUST:
 
   // Build the context-aware prompt
   const contextParts: string[] = [];
+
+  // START WITH USER'S INSTRUCTION - this is the PRIMARY directive
+  const baseInstruction = instruction || 'Improve this paragraph according to my style preferences.';
+  if (instruction && instruction.trim()) {
+    contextParts.push('=== PRIMARY INSTRUCTION (MUST FOLLOW) ===');
+    contextParts.push('');
+    contextParts.push(instruction);
+    contextParts.push('');
+    contextParts.push('The above instruction is your PRIMARY task. Follow it precisely.');
+    contextParts.push('');
+    contextParts.push('---');
+    contextParts.push('');
+  }
+
+  // Style profile comes AFTER - it's for alignment, not the primary task
+  contextParts.push('=== STYLE ALIGNMENT (apply after following the instruction) ===');
+  contextParts.push('');
   contextParts.push(stylePrompt);
   contextParts.push('');
 
-  // Add syntax mode instructions prominently at the top
+  // Add syntax mode instructions
   if (syntaxInstructions) {
     contextParts.push('---');
     contextParts.push('');
@@ -333,10 +402,22 @@ This is a code document. You MUST:
   contextParts.push('');
 
   if (isGenerationRequest) {
-    contextParts.push('You are working on a document and may need to generate new content, expand existing content, or make significant changes based on the instruction.');
-    contextParts.push('You are NOT limited to just editing the existing text - you can rewrite, expand, or generate entirely new content as the instruction requires.');
+    contextParts.push('You are working on a document and need to GENERATE or significantly EXPAND content based on the instruction.');
+    contextParts.push('IMPORTANT:');
+    contextParts.push('- You are NOT limited to just editing the existing text');
+    contextParts.push('- You can rewrite, expand, restructure, or generate entirely new content');
+    contextParts.push('- If the instruction asks to generate/write content, produce SUBSTANTIAL new text');
+    contextParts.push('- Structure the output appropriately (multiple paragraphs, sections as needed)');
+    contextParts.push('- The existing content below is CONTEXT - use it to understand the topic, but generate new content as instructed');
   } else {
     contextParts.push('You are editing a specific paragraph within a larger document.');
+    contextParts.push('');
+    contextParts.push('EDITING PRINCIPLES:');
+    contextParts.push('- Make MINIMAL, TARGETED changes - only edit what the instruction asks for');
+    contextParts.push('- PRESERVE the original voice, tone, and structure as much as possible');
+    contextParts.push('- Consider the CONTEXT: how this paragraph flows from the previous and into the next');
+    contextParts.push('- Do NOT rewrite the entire paragraph unless explicitly asked');
+    contextParts.push('- Do NOT add or remove content unless the instruction requires it');
   }
   contextParts.push('');
 
@@ -349,6 +430,28 @@ This is a code document. You MUST:
     contextParts.push('');
   }
 
+  // Add document goals (from Intent Agent)
+  if (documentGoals) {
+    contextParts.push('DOCUMENT GOALS:');
+    contextParts.push(`Summary: ${documentGoals.summary}`);
+    if (documentGoals.objectives.length > 0) {
+      contextParts.push('Objectives:');
+      documentGoals.objectives.forEach((obj, i) => {
+        contextParts.push(`  ${i + 1}. ${obj}`);
+      });
+    }
+    if (documentGoals.mainArgument) {
+      contextParts.push(`Main Argument: ${documentGoals.mainArgument}`);
+    }
+    if (documentGoals.audienceNeeds) {
+      contextParts.push(`Audience Needs: ${documentGoals.audienceNeeds}`);
+    }
+    if (documentGoals.successCriteria) {
+      contextParts.push(`Success Criteria: ${documentGoals.successCriteria}`);
+    }
+    contextParts.push('');
+  }
+
   // Add section-specific guidance
   if (currentSection) {
     contextParts.push(`CURRENT SECTION: ${currentSection.name} (${currentSection.type})`);
@@ -356,19 +459,38 @@ This is a code document. You MUST:
     contextParts.push('');
   }
 
-  // Add key terms
-  if (documentStructure?.keyTerms && documentStructure.keyTerms.length > 0) {
-    contextParts.push('KEY TERMS:');
-    documentStructure.keyTerms.forEach((t) => contextParts.push(`- ${t}`));
+  // Add paragraph intent (from Intent Agent analysis)
+  if (paragraphIntent) {
+    contextParts.push('PARAGRAPH INTENT:');
+    contextParts.push(`Purpose: ${paragraphIntent.purpose}`);
+    if (paragraphIntent.connectionToPrevious) {
+      contextParts.push(`Connection to previous: ${paragraphIntent.connectionToPrevious}`);
+    }
+    if (paragraphIntent.connectionToNext) {
+      contextParts.push(`Connection to next: ${paragraphIntent.connectionToNext}`);
+    }
+    if (paragraphIntent.roleInGoals) {
+      contextParts.push(`Role in document goals: ${paragraphIntent.roleInGoals}`);
+    }
+    contextParts.push('');
+    contextParts.push('IMPORTANT: Preserve this paragraph\'s intent and role in the document when editing.');
     contextParts.push('');
   }
 
-  // Add document-specific context from learned preferences and imported constraints
+  // Add document-specific LEARNED RULES FIRST - these are critical user feedback
+  // They must appear before other context so the LLM prioritizes them
   if (documentAdjustments) {
     const docContextPrompt = buildDocumentContextPrompt(documentAdjustments);
     if (docContextPrompt.trim()) {
       contextParts.push(docContextPrompt);
     }
+  }
+
+  // Add key terms
+  if (documentStructure?.keyTerms && documentStructure.keyTerms.length > 0) {
+    contextParts.push('KEY TERMS:');
+    documentStructure.keyTerms.forEach((t) => contextParts.push(`- ${t}`));
+    contextParts.push('');
   }
 
   // Add surrounding context
@@ -380,7 +502,11 @@ This is a code document. You MUST:
     contextParts.push('');
   }
 
-  contextParts.push('PARAGRAPH TO EDIT:');
+  if (isGenerationRequest) {
+    contextParts.push('EXISTING CONTENT (use as context for your generation):');
+  } else {
+    contextParts.push('PARAGRAPH TO EDIT:');
+  }
   contextParts.push(currentCell);
   contextParts.push('');
 
@@ -409,12 +535,16 @@ This is a code document. You MUST:
   contextParts.push('---');
   contextParts.push('');
 
-  // Build edit instruction - emphasize word cutting when in terse mode
+  // Reminder of the primary instruction, with special handling for terse mode
   const isTerseMode = documentAdjustments && documentAdjustments.verbosityAdjust <= -0.5;
-  const baseInstruction = instruction || 'Improve this paragraph according to my style preferences.';
+
+  if (instruction && instruction.trim()) {
+    contextParts.push(`REMINDER - Your PRIMARY task: ${instruction}`);
+  } else {
+    contextParts.push('TASK: Improve this paragraph according to my style preferences.');
+  }
 
   if (isTerseMode && !isGenerationRequest) {
-    contextParts.push('EDIT INSTRUCTION: ' + baseInstruction);
     contextParts.push('');
     contextParts.push('⚠️ CRITICAL WORD COUNT REQUIREMENT ⚠️');
     contextParts.push('You MUST cut at least 30% of words. Count them. Original has approximately ' +
@@ -422,8 +552,6 @@ This is a code document. You MUST:
     contextParts.push('Your output MUST have fewer than ' +
       Math.floor(currentCell.split(/\s+/).length * 0.7) + ' words.');
     contextParts.push('If your edit is not significantly shorter, START OVER and cut more aggressively.');
-  } else {
-    contextParts.push(`INSTRUCTION: ${baseInstruction}`);
   }
 
   contextParts.push('');
@@ -448,12 +576,32 @@ This is a code document. You MUST:
   const providerConfig = getDefaultProviderConfig(model);
   const provider = await createProvider(providerConfig);
 
+  // Build user message with reminder of critical rules
+  let userMessage = isGenerationRequest
+    ? 'Please generate the content now based on the instruction.'
+    : 'Please edit the paragraph now. Make targeted, minimal changes that address the instruction while preserving the original voice and structure.';
+
+  // Add critical rule reminder in user message for extra emphasis
+  if (documentAdjustments?.learnedRules && documentAdjustments.learnedRules.length > 0) {
+    const criticalRules = documentAdjustments.learnedRules
+      .filter(r => r.confidence >= 0.7)
+      .slice(0, 3); // Top 3 critical rules
+
+    if (criticalRules.length > 0) {
+      userMessage += '\n\nREMINDER - Critical rules from previous feedback:';
+      criticalRules.forEach(r => {
+        userMessage += `\n- ${r.rule}`;
+      });
+    }
+  }
+
   const result = await provider.complete({
     messages: [
       { role: 'system', content: systemPrompt },
-      { role: 'user', content: 'Please edit the paragraph now.' },
+      { role: 'user', content: userMessage },
     ],
-    temperature: 0.3,
+    temperature: isGenerationRequest ? 0.6 : 0.25, // Lower temp for more consistent edits
+    ...(isGenerationRequest ? { maxTokens: 4000 } : {}), // Only limit tokens for generation
   });
 
   // Clean up the response

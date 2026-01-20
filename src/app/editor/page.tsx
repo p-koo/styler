@@ -3,12 +3,15 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
-import DiffView, { SideBySideDiff, type FeedbackType } from '@/components/DiffView';
+import DiffView, { SideBySideDiff, type FeedbackType, type RejectFeedback } from '@/components/DiffView';
 import CritiqueBadge from '@/components/CritiqueBadge';
 import DocumentProfilePanel from '@/components/DocumentProfilePanel';
 import FeedbackPanel, { type FeedbackPanelState, DEFAULT_FEEDBACK_STATE } from '@/components/FeedbackPanel';
 import SyntaxHighlighter, { type HighlightMode } from '@/components/SyntaxHighlighter';
 import type { AudienceProfile, CritiqueAnalysis } from '@/types';
+
+// Shared theme storage key (same as settings page)
+const THEME_STORAGE_KEY = 'styler-theme';
 
 // Dynamic import CodeMirror to avoid SSR issues
 const CodeMirrorEditor = dynamic(() => import('@/components/CodeMirrorEditor'), {
@@ -61,7 +64,10 @@ interface Cell {
   batchEditStatus?: 'modified' | 'removed' | 'unchanged'; // Status in batch edit
   batchEditContent?: string; // New content for this cell (if modified)
   batchEditGroupId?: string; // Group ID to link cells in same batch edit
-  batchNewCells?: string[]; // New cells to be added (only on first cell of batch)
+  batchNewCells?: Array<{ content: string; type?: 'cell' | 'heading' }>; // New cells to be added (only on first cell of batch)
+  // For merged cell editing (simplified multi-cell edit)
+  originalMergedCells?: Array<{ content: string; type?: 'cell' | 'heading' }>; // Original cells before merge
+  mergedFromIndices?: number[]; // Original indices that were merged
 }
 
 interface Document {
@@ -226,16 +232,22 @@ export default function EditorPage() {
     localStorage.setItem(MODEL_STORAGE_KEY, model);
   };
 
-  // Load and apply dark mode preference
+  // Track if theme has been loaded from storage
+  const [themeLoaded, setThemeLoaded] = useState(false);
+
+  // Load saved theme on mount (uses shared key with settings page)
   useEffect(() => {
-    const saved = localStorage.getItem('theme-preference') as 'system' | 'light' | 'dark' | null;
-    if (saved) {
-      setDarkMode(saved);
+    const savedTheme = localStorage.getItem(THEME_STORAGE_KEY) as 'system' | 'light' | 'dark' | null;
+    if (savedTheme) {
+      setDarkMode(savedTheme);
     }
+    setThemeLoaded(true);
   }, []);
 
-  // Apply dark mode class to document
+  // Apply dark mode class to document (only after theme is loaded)
   useEffect(() => {
+    if (!themeLoaded) return; // Don't apply until we've loaded from storage
+
     const root = window.document.documentElement;
     root.classList.remove('dark', 'light');
     if (darkMode === 'dark') {
@@ -243,8 +255,8 @@ export default function EditorPage() {
     } else if (darkMode === 'light') {
       root.classList.add('light');
     }
-    localStorage.setItem('theme-preference', darkMode);
-  }, [darkMode]);
+    localStorage.setItem(THEME_STORAGE_KEY, darkMode);
+  }, [darkMode, themeLoaded]);
 
   // Cycle through theme modes
   const cycleTheme = () => {
@@ -326,6 +338,9 @@ export default function EditorPage() {
     // Set new timeout for auto-save (1 second debounce)
     autoSaveTimeoutRef.current = setTimeout(async () => {
       try {
+        // Get current feedback state for this document
+        const currentFeedbackState = feedbackStates[document.id];
+
         await fetch('/api/documents', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -336,6 +351,10 @@ export default function EditorPage() {
             structure: document.structure,
             selectedProfileId: activeProfile,
             syntaxMode: editorMode,
+            // Separate custom instructions for each edit mode
+            stylerInstruction: editInstruction,
+            vibeGuidance: currentFeedbackState?.guidance || '',
+            vibeSelectedPresets: currentFeedbackState?.selectedVibes || [],
           }),
         });
         // Silently refresh documents list
@@ -350,7 +369,7 @@ export default function EditorPage() {
         clearTimeout(autoSaveTimeoutRef.current);
       }
     };
-  }, [document, loadDocumentsList, activeProfile, editorMode]);
+  }, [document, loadDocumentsList, activeProfile, editorMode, editInstruction, feedbackStates]);
 
   // Export document as .txt file
   const handleExportDocument = useCallback(() => {
@@ -414,6 +433,26 @@ export default function EditorPage() {
         const fullContent = loadedDoc.cells.map((p: { content: string }) => p.content).join('\n');
         const detected = detectSyntaxMode(fullContent);
         setEditorMode(detected);
+      }
+
+      // Restore separate custom instructions
+      // Styler Edit instruction
+      if (loadedDoc.stylerInstruction) {
+        setEditInstruction(loadedDoc.stylerInstruction);
+      } else {
+        setEditInstruction('');
+      }
+
+      // Vibe Edit guidance and presets
+      if (loadedDoc.vibeGuidance || loadedDoc.vibeSelectedPresets) {
+        setFeedbackStates(prev => ({
+          ...prev,
+          [loadedDoc.id]: {
+            ...DEFAULT_FEEDBACK_STATE,
+            guidance: loadedDoc.vibeGuidance || '',
+            selectedVibes: loadedDoc.vibeSelectedPresets || [],
+          }
+        }));
       }
     } catch (e) {
       console.error('Failed to load document:', e);
@@ -599,6 +638,16 @@ export default function EditorPage() {
       return;
     }
 
+    // Validate that all indices are within bounds
+    const invalidIndices = cellIndices.filter(i => i < 0 || i >= document.cells.length);
+    if (invalidIndices.length > 0) {
+      console.error('[Vibe Edit] Invalid cell indices:', invalidIndices, 'document has', document.cells.length, 'cells');
+      // Clear selection and notify user
+      setSelectedCells(new Set());
+      alert(`Selection contains invalid cell indices. The document may have changed. Please reselect cells and try again.`);
+      return;
+    }
+
     const selectedIndices = [...cellIndices].sort((a, b) => a - b);
     const isMultiple = selectedIndices.length > 1;
     console.log('[Vibe Edit] Processing:', { selectedIndices, isMultiple, totalCells: document.cells.length });
@@ -614,17 +663,36 @@ export default function EditorPage() {
 
     try {
       if (isMultiple) {
-        const res = await fetch('/api/document/edit-batch', {
+        // SIMPLIFIED APPROACH: Merge cells → Edit as one → Split on accept
+        // Step 1: Merge all selected cells into one block of text
+        const originalCells = selectedIndices.map((i) => ({
+          content: document.cells[i]?.content || '',
+          type: document.cells[i]?.type || 'cell',
+        }));
+        const mergedContent = originalCells.map((c) => c.content).join('\n\n');
+
+        console.log('[Vibe Edit] Merged', selectedIndices.length, 'cells into one block');
+
+        // Step 2: Call single-cell edit API on the merged content
+        // Include surrounding cells for context (cells before and after the selection)
+        const beforeCells = document.cells.slice(0, selectedIndices[0]).map(c => c.content);
+        const afterCells = document.cells.slice(selectedIndices[selectedIndices.length - 1] + 1).map(c => c.content);
+        const cellsWithContext = [...beforeCells, mergedContent, ...afterCells];
+        const mergedCellIndex = beforeCells.length;
+
+        const res = await fetch('/api/document/edit', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            cells: document.cells.map((p) => p.content),
-            selectedIndices,
+            cells: cellsWithContext, // Include surrounding cells for context
+            cellIndex: mergedCellIndex,
             instruction,
             profileId: activeProfile,
             documentStructure: document.structure,
             model: selectedModel || undefined,
+            documentId: document.id,
             syntaxMode: editorMode,
+            includeCritique: true, // Include critique for alignment score
           }),
           signal,
         });
@@ -635,189 +703,52 @@ export default function EditorPage() {
         }
 
         const data = await res.json();
-        const batchGroupId = `batch-${Date.now()}`;
+        console.log('[Vibe Edit] Got edited content, length:', data.editedText?.length);
 
-        // Split edited text into new paragraphs
-        const newParagraphs = (data.editedText as string)
-          .split(/\n\s*\n/)
-          .map((p) => p.trim())
-          .filter((p) => p.length > 0);
-
-        // Get original paragraphs
-        const originalParagraphs = selectedIndices.map((i) => document.cells[i]?.content || '');
-
-        // Check if this is an "add only" response (content was sampled, just new content returned)
-        const isAddOnly = data.isAddOnly === true;
-
-        // Detect if this is an "add" type instruction
-        const instructionLower = (instruction || '').toLowerCase();
-        const isAddInstruction = /\b(add|insert|prepend|include|create|write|generate)\s+(an?\s+)?(abstract|introduction|conclusion|section|paragraph|summary|title|header)/i.test(instructionLower);
-
-        // Debug logging
-        console.log('[Vibe Edit] Instruction:', instruction);
-        console.log('[Vibe Edit] Is add instruction:', isAddInstruction);
-        console.log('[Vibe Edit] Is add only (sampled):', isAddOnly);
-        console.log('[Vibe Edit] Original paragraphs:', originalParagraphs.length);
-        console.log('[Vibe Edit] New paragraphs from LLM:', newParagraphs.length);
-        console.log('[Vibe Edit] LLM response preview:', data.editedText?.slice(0, 500));
-
-        // For "add only" responses, skip similarity matching - just show new content as additions
-        if (isAddOnly) {
-          console.log('[Vibe Edit] Add only mode - showing new content as additions');
-          setDocument((prev) => {
-            if (!prev) return null;
-            const updated = { ...prev };
-            updated.cells = [...prev.cells];
-
-            // Mark all cells as unchanged
-            for (const idx of selectedIndices) {
-              updated.cells[idx] = {
-                ...updated.cells[idx],
-                batchEditStatus: 'unchanged',
-                batchEditGroupId: batchGroupId,
-              };
-            }
-
-            // Store new content to prepend on the first cell
-            const firstIndex = selectedIndices[0];
-            const combinedNewContent = newParagraphs.join('\n\n');
-            const originalCombined = selectedIndices
-              .map((i) => prev.cells[i]?.content || '')
-              .join('\n\n');
-
-            updated.cells[firstIndex] = {
-              ...updated.cells[firstIndex],
-              edited: combinedNewContent + '\n\n' + originalCombined, // New content + original
-              originalBatchContent: originalCombined,
-              batchEditStatus: 'unchanged',
-              batchEditGroupId: batchGroupId,
-            };
-
-            // Also store as new cells to be shown separately
-            if (newParagraphs.length > 0) {
-              (updated.cells[firstIndex] as Cell & { batchNewCells?: string[] }).batchNewCells = newParagraphs;
-            }
-
-            return updated;
-          });
-          // Skip similarity matching and go directly to scroll/cleanup
-        } else {
-
-        // Simple similarity check (word overlap)
-        const getSimilarity = (a: string, b: string): number => {
-          const wordsA = new Set(a.toLowerCase().split(/\s+/));
-          const wordsB = new Set(b.toLowerCase().split(/\s+/));
-          const intersection = [...wordsA].filter((w) => wordsB.has(w)).length;
-          const union = new Set([...wordsA, ...wordsB]).size;
-          return union > 0 ? intersection / union : 0;
-        };
-
-        // Match original paragraphs to new paragraphs
-        const matchedNew = new Set<number>();
-        const cellStatuses: Array<{
-          originalIndex: number;
-          status: 'modified' | 'removed' | 'unchanged';
-          newContent?: string;
-        }> = [];
-
-        // For "add" instructions, use a different strategy:
-        // - Use lower similarity threshold (0.15) to be more lenient
-        // - Never mark as "removed" - assume content is preserved
-        const similarityThreshold = isAddInstruction ? 0.15 : 0.3;
-
-        for (let i = 0; i < originalParagraphs.length; i++) {
-          let bestMatch = -1;
-          let bestSimilarity = similarityThreshold;
-
-          for (let j = 0; j < newParagraphs.length; j++) {
-            if (matchedNew.has(j)) continue;
-            const sim = getSimilarity(originalParagraphs[i], newParagraphs[j]);
-            if (sim > bestSimilarity) {
-              bestSimilarity = sim;
-              bestMatch = j;
-            }
-          }
-
-          if (bestMatch >= 0) {
-            matchedNew.add(bestMatch);
-            const isModified = originalParagraphs[i].trim() !== newParagraphs[bestMatch].trim();
-            cellStatuses.push({
-              originalIndex: selectedIndices[i],
-              status: isModified ? 'modified' : 'unchanged',
-              newContent: isModified ? newParagraphs[bestMatch] : undefined,
-            });
-          } else if (isAddInstruction) {
-            // For "add" instructions, assume original content is preserved unchanged
-            // if we can't find a match (don't mark as removed)
-            cellStatuses.push({
-              originalIndex: selectedIndices[i],
-              status: 'unchanged',
-            });
-          } else {
-            // No match found - this paragraph is removed
-            cellStatuses.push({
-              originalIndex: selectedIndices[i],
-              status: 'removed',
-            });
-          }
-        }
-
-        // Find new paragraphs that weren't matched (these are additions)
-        const newAdditions = newParagraphs
-          .filter((_, i) => !matchedNew.has(i))
-          .map((content) => content);
-
-        // Debug logging for matching results
-        console.log('[Vibe Edit] Cell statuses:', cellStatuses.map(s => ({ idx: s.originalIndex, status: s.status })));
-        console.log('[Vibe Edit] New additions:', newAdditions.length, newAdditions.map(a => a.slice(0, 100)));
-        console.log('[Vibe Edit] Matched indices:', [...matchedNew]);
-
-        // Check if we got a meaningful response
-        if (!data.editedText || data.editedText.trim().length === 0) {
-          console.error('[Vibe Edit] Empty response from LLM');
-          alert('The AI returned an empty response. Please try again with a different instruction.');
-          return;
-        }
-
+        // Step 3: Temporarily merge cells in document and show diff
+        // Store original cells for reject, show merged cell with edit suggestion
         setDocument((prev) => {
           if (!prev) return null;
           const updated = { ...prev };
-          updated.cells = [...prev.cells];
 
-          const originalCombined = selectedIndices
-            .map((i) => prev.cells[i]?.content || '')
-            .join('\n\n');
+          // Build new cells array: keep cells before selection, add merged cell, keep cells after
+          const newCells: Cell[] = [];
+          let newIndex = 0;
 
-          // Update each cell with its status
-          for (const status of cellStatuses) {
-            updated.cells[status.originalIndex] = {
-              ...updated.cells[status.originalIndex],
-              batchEditStatus: status.status,
-              batchEditContent: status.newContent,
-              batchEditGroupId: batchGroupId,
-            };
+          for (let i = 0; i < prev.cells.length; i++) {
+            if (i === selectedIndices[0]) {
+              // Insert the merged cell with edit suggestion
+              newCells.push({
+                id: `merged-${Date.now()}`,
+                index: newIndex,
+                content: mergedContent,
+                type: 'cell', // Merged cell is generic
+                edited: data.editedText,
+                critique: data.critique, // Include critique for alignment score
+                iterations: data.iterations,
+                convergenceHistory: data.convergenceHistory,
+                // Store original cells for splitting on accept and restore on reject
+                originalMergedCells: originalCells,
+                mergedFromIndices: selectedIndices,
+              });
+              newIndex++;
+            } else if (!selectedIndices.includes(i)) {
+              // Keep non-selected cells
+              newCells.push({
+                ...prev.cells[i],
+                index: newIndex,
+              });
+              newIndex++;
+            }
+            // Skip other selected cells (they're merged into the first one)
           }
 
-          // Store the full edit on the first cell for the accept/reject flow
-          const firstIndex = selectedIndices[0];
-          updated.cells[firstIndex] = {
-            ...updated.cells[firstIndex],
-            edited: data.editedText,
-            originalBatchContent: originalCombined,
-            batchEditStatus: cellStatuses[0]?.status,
-            batchEditContent: cellStatuses[0]?.newContent,
-            batchEditGroupId: batchGroupId,
-          };
-
-          // Store info about new additions (we'll show them after the last selected cell)
-          if (newAdditions.length > 0) {
-            (updated.cells[firstIndex] as Cell & { batchNewCells?: string[] }).batchNewCells = newAdditions;
-          }
-
-          console.log('[Vibe Edit] Document updated, first cell now has edited:', !!updated.cells[firstIndex]?.edited);
+          updated.cells = newCells;
           return updated;
         });
-        } // End of else block for non-isAddOnly path
+
+        // Update selection to just the merged cell
+        setSelectedCells(new Set([selectedIndices[0]]));
       } else {
         // Single cell edit
         console.log('[Vibe Edit] Single cell mode, index:', selectedIndices[0], 'instruction:', instruction);
@@ -889,6 +820,16 @@ export default function EditorPage() {
     if (!document || selectedCells.size === 0) return;
 
     const selectedIndices = Array.from(selectedCells).sort((a, b) => a - b);
+
+    // Validate that all indices are within bounds
+    const invalidIndices = selectedIndices.filter(i => i < 0 || i >= document.cells.length);
+    if (invalidIndices.length > 0) {
+      console.error('[Edit] Invalid cell indices:', invalidIndices, 'document has', document.cells.length, 'cells');
+      setSelectedCells(new Set());
+      alert(`Selection contains invalid cell indices. Please reselect cells and try again.`);
+      return;
+    }
+
     const isMultiple = selectedIndices.length > 1;
 
     setIsLoading(true);
@@ -904,7 +845,8 @@ export default function EditorPage() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            cells: document.cells.map((p) => p.content),
+            // Send full cell objects with type information
+            cells: document.cells.map((p) => ({ content: p.content, type: p.type || 'cell' })),
             selectedIndices,
             instruction: editInstruction || 'Improve logical flow and coherence, rearranging if needed',
             profileId: activeProfile,
@@ -1005,8 +947,19 @@ export default function EditorPage() {
   // Accept edit with final text (may be partially accepted or batch edit)
   const handleAcceptEdit = useCallback((index: number, finalText: string) => {
     console.log('handleAcceptEdit called:', { index, finalTextLength: finalText?.length });
-    const selectedIndices = Array.from(selectedCells).sort((a, b) => a - b);
-    const isBatchEdit = selectedIndices.length > 1 && selectedIndices[0] === index;
+
+    // Detect batch edit from stored metadata, NOT current selection (selection may have changed)
+    const cell = document?.cells[index];
+    const batchGroupId = cell?.batchEditGroupId;
+    const batchIndices = batchGroupId
+      ? document?.cells
+          .map((c, i) => (c.batchEditGroupId === batchGroupId ? i : -1))
+          .filter((i) => i >= 0)
+          .sort((a, b) => a - b) || []
+      : [];
+    const isBatchEdit = batchIndices.length > 1 && batchIndices[0] === index;
+    // Use batch indices for the operation, fall back to current selection for single edits
+    const selectedIndices = isBatchEdit ? batchIndices : Array.from(selectedCells).sort((a, b) => a - b);
 
     // Get original and suggested text before updating document
     const originalText = document?.cells[index]?.originalBatchContent || document?.cells[index]?.content || '';
@@ -1021,12 +974,18 @@ export default function EditorPage() {
     setDocument((prev) => {
       if (!prev) return null;
 
+      // Check if this is a merged cell (from multi-cell edit)
+      const currentCell = prev.cells.find((c, i) => i === index);
+      const isMergedCell = currentCell?.originalMergedCells && currentCell.originalMergedCells.length > 0;
+
       // Save snapshot before making the change
       const snapshot = saveSnapshot(
         prev.id,
         prev.title,
         prev.cells.map((p) => ({ id: p.id, index: p.index, content: p.content })),
-        isBatchEdit
+        isMergedCell
+          ? `Edited merged cells`
+          : isBatchEdit
           ? `Edited cells ${selectedIndices.map(i => i + 1).join(', ')}`
           : `Edited cell ${index + 1}`
       );
@@ -1037,39 +996,93 @@ export default function EditorPage() {
         return { ...h, snapshots: [snapshot, ...h.snapshots].slice(0, 50) };
       });
 
-      if (isBatchEdit) {
-        // Batch edit: replace selected paragraphs with new content
-        // Split the final text into paragraphs
-        const newCellTexts = finalText
+      if (isMergedCell) {
+        // MERGED CELL: Split the accepted text back into cells
+        console.log('[Accept Merged] Splitting accepted text back into cells');
+
+        // Split by double newlines
+        const splitTexts = finalText
           .split(/\n\s*\n/)
           .map((p) => p.trim())
           .filter((p) => p.length > 0);
 
-        // Build new paragraphs array
+        console.log('[Accept Merged] Split into', splitTexts.length, 'cells');
+
+        // Build new cells array
+        const newCells: Cell[] = [];
+        let newIndex = 0;
+
+        for (let i = 0; i < prev.cells.length; i++) {
+          if (i === index) {
+            // Replace merged cell with split cells
+            for (const text of splitTexts) {
+              newCells.push({
+                id: `para-${Date.now()}-${newIndex}`,
+                index: newIndex,
+                content: text,
+                type: 'cell',
+                editAccepted: true,
+              });
+              newIndex++;
+            }
+          } else {
+            // Keep other cells
+            newCells.push({
+              ...prev.cells[i],
+              index: newIndex,
+              // Clear any merge-related fields
+              originalMergedCells: undefined,
+              mergedFromIndices: undefined,
+            });
+            newIndex++;
+          }
+        }
+
+        return { ...prev, cells: newCells };
+      } else if (isBatchEdit) {
+        // OLD BATCH EDIT PATH (for backward compatibility)
+        // Batch edit: replace selected cells with new content
+        const firstCell = prev.cells[selectedIndices[0]];
+        const structuredCells = firstCell?.batchNewCells;
+
+        // Parse into cells - prefer structured data, fall back to text splitting
+        interface ParsedCell { content: string; type?: 'cell' | 'heading'; }
+        let parsedCells: ParsedCell[];
+
+        if (structuredCells && structuredCells.length > 0) {
+          parsedCells = structuredCells;
+          console.log('[Accept Batch] Using structured cells:', parsedCells.length);
+        } else {
+          parsedCells = finalText
+            .split(/\n\s*\n/)
+            .map((p) => ({ content: p.trim(), type: 'cell' as const }))
+            .filter((p) => p.content.length > 0);
+          console.log('[Accept Batch] Parsed from text:', parsedCells.length);
+        }
+
+        // Build new cells array
         const newCells: Cell[] = [];
         let newIndex = 0;
 
         for (let i = 0; i < prev.cells.length; i++) {
           if (i === selectedIndices[0]) {
-            // Insert new paragraphs at the first selected index
-            for (const text of newCellTexts) {
+            for (const parsed of parsedCells) {
               newCells.push({
                 id: `para-${Date.now()}-${newIndex}`,
                 index: newIndex,
-                content: text,
+                content: parsed.content,
+                type: parsed.type || 'cell',
                 editAccepted: true,
               });
               newIndex++;
             }
           } else if (!selectedIndices.includes(i)) {
-            // Keep non-selected paragraphs
             newCells.push({
               ...prev.cells[i],
               index: newIndex,
             });
             newIndex++;
           }
-          // Skip other selected paragraphs (they're being replaced)
         }
 
         return { ...prev, cells: newCells };
@@ -1142,20 +1155,58 @@ export default function EditorPage() {
     setReviewHighlightedCells(new Set()); // Clear review highlighting
   }, [document, selectedCells, clearSelection, editInstruction, activeProfile, selectedModel]);
 
-  // Reject edit
-  const handleRejectEdit = useCallback((index: number) => {
-    console.log('handleRejectEdit called:', { index });
+  // Reject edit with optional feedback
+  const handleRejectEdit = useCallback((index: number, feedback?: RejectFeedback[]) => {
+    console.log('handleRejectEdit called:', { index, feedback });
     // Get original and suggested text before updating document
-    const originalText = document?.cells[index]?.originalBatchContent || document?.cells[index]?.content || '';
-    const suggestedEdit = document?.cells[index]?.edited || '';
-    const critique = document?.cells[index]?.critique;
+    const currentCell = document?.cells[index];
+    const originalText = currentCell?.originalBatchContent || currentCell?.content || '';
+    const suggestedEdit = currentCell?.edited || '';
+    const critique = currentCell?.critique;
     const docId = document?.id;
 
+    // Check if this is a merged cell that needs to be restored to original cells
+    const isMergedCell = currentCell?.originalMergedCells && currentCell.originalMergedCells.length > 0;
+
     // Get the batch group ID to clear all related cells
-    const batchGroupId = document?.cells[index]?.batchEditGroupId;
+    const batchGroupId = currentCell?.batchEditGroupId;
 
     setDocument((prev) => {
       if (!prev) return null;
+
+      if (isMergedCell && currentCell?.originalMergedCells) {
+        // MERGED CELL: Restore original cells
+        console.log('[Reject Merged] Restoring', currentCell.originalMergedCells.length, 'original cells');
+
+        const newCells: Cell[] = [];
+        let newIndex = 0;
+
+        for (let i = 0; i < prev.cells.length; i++) {
+          if (i === index) {
+            // Replace merged cell with original cells
+            for (const original of currentCell.originalMergedCells) {
+              newCells.push({
+                id: `para-${Date.now()}-${newIndex}`,
+                index: newIndex,
+                content: original.content,
+                type: original.type || 'cell',
+              });
+              newIndex++;
+            }
+          } else {
+            // Keep other cells
+            newCells.push({
+              ...prev.cells[i],
+              index: newIndex,
+            });
+            newIndex++;
+          }
+        }
+
+        return { ...prev, cells: newCells };
+      }
+
+      // Standard reject: just clear edit state
       const updated = { ...prev };
       updated.cells = prev.cells.map((cell) => {
         // Clear this cell or any cell in the same batch group
@@ -1171,6 +1222,8 @@ export default function EditorPage() {
             batchEditContent: undefined,
             batchEditGroupId: undefined,
             batchNewCells: undefined,
+            originalMergedCells: undefined,
+            mergedFromIndices: undefined,
           };
         }
         return cell;
@@ -1180,7 +1233,7 @@ export default function EditorPage() {
 
     // Record the rejection for learning (async, don't wait)
     if (docId && suggestedEdit) {
-      console.log('Recording rejection:', { docId, hasOriginal: !!originalText, hasSuggested: !!suggestedEdit });
+      console.log('Recording rejection:', { docId, hasOriginal: !!originalText, hasSuggested: !!suggestedEdit, feedback });
       fetch('/api/document/edit-decision', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1195,10 +1248,11 @@ export default function EditorPage() {
           critiqueAnalysis: critique,
           profileId: activeProfile,
           model: selectedModel || undefined,
+          feedback: feedback || undefined, // Include explicit feedback if provided
         }),
       })
         .then(res => res.json())
-        .then(data => console.log('Rejection recorded:', data))
+        .then(data => console.log('Rejection recorded with feedback:', data))
         .catch((err) => console.error('Failed to record rejection:', err));
     } else {
       console.log('Skipping rejection - missing data:', { docId, hasSuggested: !!suggestedEdit });
@@ -2338,6 +2392,7 @@ export default function EditorPage() {
               {document.cells.map((para, index) => {
                 const isSearchMatch = searchResults.includes(index);
                 const isCurrentSearchMatch = searchResults[currentSearchIndex] === index;
+
                 return (
                   <div key={para.id} id={`cell-${index}`}>
                     <div
@@ -2414,7 +2469,7 @@ export default function EditorPage() {
                               original={para.originalBatchContent || para.content}
                               edited={para.edited}
                               onAccept={(finalText) => handleAcceptEdit(index, finalText)}
-                              onReject={() => handleRejectEdit(index)}
+                              onReject={(feedback) => handleRejectEdit(index, feedback)}
                               onFeedback={handleFeedback}
                             />
                           ) : (
@@ -2422,7 +2477,7 @@ export default function EditorPage() {
                               original={para.originalBatchContent || para.content}
                               edited={para.edited}
                               onAccept={(finalText) => handleAcceptEdit(index, finalText)}
-                              onReject={() => handleRejectEdit(index)}
+                              onReject={(feedback) => handleRejectEdit(index, feedback)}
                               onFeedback={handleFeedback}
                             />
                           )}
@@ -2569,18 +2624,30 @@ export default function EditorPage() {
                     {/* Show new cells that will be added in this batch */}
                     {para.batchNewCells && para.batchNewCells.length > 0 && (
                       <div className="space-y-2 my-2">
-                        {para.batchNewCells.map((newContent, newIdx) => (
+                        {para.batchNewCells.map((newCell, newIdx) => (
                           <div
                             key={`new-${index}-${newIdx}`}
-                            className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border-2 border-green-300 dark:border-green-800"
+                            className={`p-4 rounded-lg border-2 ${
+                              newCell.type === 'heading'
+                                ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-300 dark:border-blue-800'
+                                : 'bg-green-50 dark:bg-green-900/20 border-green-300 dark:border-green-800'
+                            }`}
                           >
                             <div className="flex items-center gap-2 mb-2">
-                              <span className="px-2 py-0.5 bg-green-200 text-green-800 text-xs rounded font-medium">
-                                + New cell
+                              <span className={`px-2 py-0.5 text-xs rounded font-medium ${
+                                newCell.type === 'heading'
+                                  ? 'bg-blue-200 text-blue-800'
+                                  : 'bg-green-200 text-green-800'
+                              }`}>
+                                + {newCell.type === 'heading' ? 'New heading' : 'New cell'}
                               </span>
                             </div>
-                            <div className="text-green-800 dark:text-green-200 leading-relaxed">
-                              <SyntaxHighlighter content={newContent} mode={editorMode} />
+                            <div className={`leading-relaxed ${
+                              newCell.type === 'heading'
+                                ? 'text-blue-800 dark:text-blue-200 font-semibold text-lg'
+                                : 'text-green-800 dark:text-green-200'
+                            }`}>
+                              <SyntaxHighlighter content={newCell.content} mode={editorMode} />
                             </div>
                           </div>
                         ))}

@@ -1,7 +1,7 @@
 // Core type definitions for the Preference Bridge System
 
 export type Verbosity = 'terse' | 'moderate' | 'detailed';
-export type ConfidenceSource = 'explicit' | 'inferred' | 'document';
+export type ConfidenceSource = 'explicit' | 'inferred' | 'document' | 'diff';
 export type ProviderType = 'openai' | 'anthropic' | 'ollama';
 
 // Writing style elements extracted from history
@@ -267,6 +267,81 @@ export interface EditDecision {
   critiqueAnalysis?: CritiqueAnalysis;
 }
 
+// Explicit feedback categories for rejection
+export type FeedbackCategory =
+  | 'too_formal'
+  | 'too_casual'
+  | 'too_verbose'
+  | 'too_terse'
+  | 'changed_meaning'
+  | 'over_edited'
+  | 'wrong_tone'
+  | 'bad_word_choice'
+  | 'lost_nuance'
+  | 'other';
+
+// Example pair from user edits (for example-based learning)
+export interface EditExample {
+  id: string;
+  suggestedEdit: string;        // What the LLM suggested
+  userVersion: string;          // What the user actually wanted
+  context?: string;             // Surrounding context
+  instruction?: string;         // Original instruction
+  feedback?: FeedbackCategory[];// Explicit feedback if provided
+  timestamp: string;
+}
+
+// Word-level diff pattern (for diff-based learning)
+export interface DiffPattern {
+  type: 'removal' | 'addition' | 'substitution';
+  pattern: string;              // The word/phrase pattern
+  replacement?: string;         // For substitutions, what it became
+  count: number;                // How many times this pattern occurred
+  confidence: number;           // Higher = more consistent pattern
+}
+
+// Document goals synthesized by Intent Agent
+export interface DocumentGoals {
+  // High-level synthesis of what the document aims to achieve
+  summary: string;
+
+  // Key objectives (not a laundry list, but 2-4 core aims)
+  objectives: string[];
+
+  // Target audience and their needs
+  audienceNeeds?: string;
+
+  // The main argument or thesis
+  mainArgument?: string;
+
+  // What success looks like for this document
+  successCriteria?: string;
+
+  // Last updated timestamp
+  updatedAt: string;
+
+  // Whether goals were manually edited by user
+  userEdited?: boolean;
+
+  // Whether goals are locked (prevents Intent Agent from auto-updating)
+  locked?: boolean;
+}
+
+// Paragraph intent analysis from Intent Agent
+export interface ParagraphIntent {
+  // What this paragraph is trying to accomplish
+  purpose: string;
+
+  // How it connects to the previous paragraph
+  connectionToPrevious?: string;
+
+  // How it leads to the next paragraph
+  connectionToNext?: string;
+
+  // Its role in achieving document goals
+  roleInGoals?: string;
+}
+
 // Adjustments learned from a document
 export interface DocumentAdjustments {
   // Style adjustments learned from rejections (-2 to +2)
@@ -283,6 +358,15 @@ export interface DocumentAdjustments {
 
   // Free-form rules learned from patterns
   learnedRules: LearnedRule[];
+
+  // Example pairs from user edits (example-based learning)
+  editExamples?: EditExample[];
+
+  // Word-level diff patterns (diff-based learning)
+  diffPatterns?: DiffPattern[];
+
+  // Document goals (synthesized by Intent Agent, editable by user)
+  documentGoals?: DocumentGoals;
 
   // Easter egg: Gen Alpha mode
   genAlphaMode?: boolean;

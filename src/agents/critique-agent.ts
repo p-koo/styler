@@ -14,6 +14,9 @@ import type {
   CritiqueIssue,
   EditDecision,
   LearnedRule,
+  FeedbackCategory,
+  EditExample,
+  DiffPattern,
 } from '@/types';
 import { createProvider, getDefaultProviderConfig } from '@/providers/base';
 import { buildSystemPrompt } from './prompt-agent';
@@ -27,6 +30,27 @@ export const DEFAULT_ADJUSTMENTS: DocumentAdjustments = {
   additionalPreferWords: {},
   additionalFramingGuidance: [],
   learnedRules: [],
+  editExamples: [],
+  diffPatterns: [],
+};
+
+// Feedback category to adjustment mapping
+const FEEDBACK_ADJUSTMENTS: Record<FeedbackCategory, Partial<{
+  verbosity: number;
+  formality: number;
+  hedging: number;
+  rule: string;
+}>> = {
+  too_formal: { formality: -0.5, rule: 'Use a more casual, conversational tone' },
+  too_casual: { formality: 0.5, rule: 'Maintain a more formal, professional tone' },
+  too_verbose: { verbosity: -0.5, rule: 'Be more concise - cut unnecessary words' },
+  too_terse: { verbosity: 0.5, rule: 'Provide more detail and explanation' },
+  changed_meaning: { rule: 'NEVER change the core meaning or argument - only style' },
+  over_edited: { rule: 'Make MINIMAL changes - preserve original phrasing where possible' },
+  wrong_tone: { rule: 'Match the original tone and voice more closely' },
+  bad_word_choice: { rule: 'Preserve domain-specific terminology and word choices' },
+  lost_nuance: { rule: 'Preserve subtle distinctions and nuanced language' },
+  other: {},
 };
 
 /**
@@ -196,6 +220,9 @@ export async function learnFromDecision(params: {
   // Build analysis prompt
   const stylePrompt = buildSystemPrompt(baseStyle, audienceProfile);
 
+  // IMPORTANT: Only learn style preferences, NOT specific word choices
+  // Word choices are contextual - "utilize" might be wrong in one context but right in another
+  // We learn PATTERNS (too formal, too verbose) not MEMORIZATION (always use X word)
   const prompt = `You are a preference learning agent. Analyze why a user ${decision.decision} an edit suggestion.
 
 ${stylePrompt}
@@ -210,19 +237,24 @@ USER'S DECISION: ${decision.decision}
 ${decision.decision !== 'accepted' ? `USER'S FINAL VERSION:\n${decision.finalText}` : ''}
 ${decision.instruction ? `USER'S INSTRUCTION: ${decision.instruction}` : ''}
 
-Based on the difference between the suggested edit and what the user actually wanted, infer adjustments to preferences.
+Based on the difference between the suggested edit and what the user actually wanted, infer STYLE adjustments.
+
+IMPORTANT: Do NOT learn specific word preferences. Word choices are CONTEXTUAL.
+- Bad: "always use 'use' instead of 'utilize'" (too specific, context-dependent)
+- Good: "prefers simpler, less formal word choices" (style pattern)
+- Bad: "always say 'important' not 'significant'" (memorization)
+- Good: "avoid unnecessarily academic vocabulary" (pattern)
 
 Respond with a JSON object:
 {
   "verbosityAdjust": <-2 to +2, negative if user wanted shorter, positive if longer>,
   "formalityAdjust": <-2 to +2, negative if user wanted less formal, positive if more formal>,
   "hedgingAdjust": <-2 to +2, negative if user wanted more confident, positive if more cautious>,
-  "avoidWords": ["<words from the suggested edit the user seemed to reject>"],
-  "preferWords": {"<replaced word>": "<user's preferred word>"},
-  "learnedRule": "<a specific rule we can learn from this, or null if nothing specific>"
+  "learnedRule": "<a STYLE pattern rule, or null if nothing generalizable>"
 }
 
-Only include adjustments that are clearly indicated by the user's changes. Use 0 for adjustments you're not sure about.
+Rules should be about STYLE PATTERNS, not specific word substitutions.
+Use 0 for adjustments you're not sure about.
 Return ONLY the JSON object.`;
 
   try {
@@ -244,10 +276,35 @@ Return ONLY the JSON object.`;
 
     const parsed = JSON.parse(jsonMatch[0]);
 
-    // Apply learned adjustments with dampening (don't swing too far from one example)
-    const dampening = 0.3; // Apply 30% of the suggested adjustment
+    // Apply learned adjustments with dampening
+    // Higher rate for rejections (user explicitly said no), lower for partial
+    const isRejection = decision.decision === 'rejected';
+    const dampening = isRejection ? 0.5 : 0.35; // 50% for rejections, 35% for partial
     const currentAdj = documentPreferences.adjustments;
 
+    // Build new rules list
+    let newRules = currentAdj.learnedRules;
+    if (parsed.learnedRule) {
+      newRules = [
+        ...currentAdj.learnedRules,
+        {
+          rule: parsed.learnedRule,
+          confidence: isRejection ? 0.8 : 0.6, // Higher confidence for rejections
+          source: 'inferred' as const,
+          timestamp: new Date().toISOString(),
+        },
+      ];
+
+      // Consolidate rules if they've accumulated past threshold
+      // This prevents dilution from having too many similar rules
+      if (newRules.length >= 8) {
+        console.log(`Rules accumulated to ${newRules.length}, triggering consolidation...`);
+        newRules = await consolidateLearnedRules({ rules: newRules, model });
+      }
+    }
+
+    // Only learn STYLE adjustments, not word preferences
+    // Word preferences lead to overfitting - memorizing context-specific choices
     const newAdjustments: DocumentAdjustments = {
       verbosityAdjust: clamp(
         currentAdj.verbosityAdjust + (parsed.verbosityAdjust || 0) * dampening,
@@ -264,25 +321,14 @@ Return ONLY the JSON object.`;
         -2,
         2
       ),
-      additionalAvoidWords: [
-        ...new Set([...currentAdj.additionalAvoidWords, ...(parsed.avoidWords || [])]),
-      ].slice(0, 50), // Cap at 50 words
-      additionalPreferWords: {
-        ...currentAdj.additionalPreferWords,
-        ...(parsed.preferWords || {}),
-      },
+      // Keep existing avoid/prefer words but don't add new ones from LLM inference
+      // Only explicit feedback or very high-confidence diff patterns should add words
+      additionalAvoidWords: currentAdj.additionalAvoidWords,
+      additionalPreferWords: currentAdj.additionalPreferWords,
       additionalFramingGuidance: currentAdj.additionalFramingGuidance,
-      learnedRules: parsed.learnedRule
-        ? [
-            ...currentAdj.learnedRules,
-            {
-              rule: parsed.learnedRule,
-              confidence: 0.6,
-              source: 'inferred' as const,
-              timestamp: new Date().toISOString(),
-            },
-          ].slice(-20) // Keep last 20 rules
-        : currentAdj.learnedRules,
+      learnedRules: newRules,
+      editExamples: currentAdj.editExamples,
+      diffPatterns: currentAdj.diffPatterns,
     };
 
     return {
@@ -520,12 +566,61 @@ export function buildDocumentContextPrompt(adjustments: DocumentAdjustments): st
     parts.push('');
   }
 
-  // Learned rules
+  // Edit examples - show FEEDBACK PATTERNS, not full text (to avoid memorization)
+  if (adjustments.editExamples && adjustments.editExamples.length > 0) {
+    // Only show examples that have explicit feedback
+    const examplesWithFeedback = adjustments.editExamples.filter(
+      ex => ex.feedback && ex.feedback.length > 0
+    );
+
+    if (examplesWithFeedback.length > 0) {
+      parts.push('FEEDBACK PATTERNS FROM PREVIOUS REJECTIONS:');
+      parts.push('The user has given this feedback on rejected edits:');
+      parts.push('');
+
+      // Count feedback categories
+      const feedbackCounts: Record<string, number> = {};
+      examplesWithFeedback.forEach(ex => {
+        ex.feedback?.forEach(f => {
+          feedbackCounts[f] = (feedbackCounts[f] || 0) + 1;
+        });
+      });
+
+      // Show as aggregated feedback, not individual examples
+      Object.entries(feedbackCounts)
+        .sort((a, b) => b[1] - a[1])
+        .forEach(([feedback, count]) => {
+          const label = feedback.replace(/_/g, ' ');
+          parts.push(`- "${label}" (mentioned ${count}x)`);
+        });
+      parts.push('');
+      parts.push('Avoid making edits that would trigger these feedback categories.');
+      parts.push('────────────────────────────────────────────────────────────────────');
+      parts.push('');
+    }
+  }
+
+  // Learned rules - these come from user rejections and are CRITICAL
+  // Present them with maximum emphasis since they represent user feedback
   if (adjustments.learnedRules.length > 0) {
-    parts.push('SPECIFIC RULES FOR THIS DOCUMENT:');
-    adjustments.learnedRules.forEach(r => {
-      parts.push(`- ${r.rule}`);
+    parts.push('╔══════════════════════════════════════════════════════════════════╗');
+    parts.push('║  ⚠️  MANDATORY RULES - LEARNED FROM USER REJECTIONS  ⚠️          ║');
+    parts.push('╚══════════════════════════════════════════════════════════════════╝');
+    parts.push('');
+    parts.push('The user has EXPLICITLY REJECTED edits that violated these rules.');
+    parts.push('FAILURE TO FOLLOW THESE RULES WILL RESULT IN REJECTION.');
+    parts.push('');
+
+    // Sort by confidence, highest first
+    const sortedRules = [...adjustments.learnedRules].sort((a, b) => b.confidence - a.confidence);
+
+    sortedRules.forEach((r, i) => {
+      const priority = r.confidence >= 0.85 ? '🚨 [CRITICAL]' :
+                       r.confidence >= 0.7 ? '⚠️ [HIGH]' : '[MEDIUM]';
+      parts.push(`${i + 1}. ${priority} ${r.rule}`);
     });
+    parts.push('');
+    parts.push('────────────────────────────────────────────────────────────────────');
     parts.push('');
   }
 
@@ -563,4 +658,323 @@ export function getEditStats(editHistory: EditDecision[]): {
  */
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
+}
+
+/**
+ * Learn from explicit user feedback (button clicks like "too formal", "over-edited")
+ * This provides much clearer signal than inferring from diffs.
+ */
+export function learnFromExplicitFeedback(params: {
+  feedback: FeedbackCategory[];
+  documentPreferences: DocumentPreferences;
+  suggestedEdit: string;
+  userVersion: string;
+  instruction?: string;
+}): DocumentPreferences {
+  const { feedback, documentPreferences, suggestedEdit, userVersion, instruction } = params;
+
+  const newAdjustments = { ...documentPreferences.adjustments };
+
+  // Apply adjustments for each feedback category
+  for (const category of feedback) {
+    const adjustment = FEEDBACK_ADJUSTMENTS[category];
+    if (!adjustment) continue;
+
+    // Apply slider adjustments
+    if (adjustment.verbosity) {
+      newAdjustments.verbosityAdjust = clamp(
+        newAdjustments.verbosityAdjust + adjustment.verbosity,
+        -2, 2
+      );
+    }
+    if (adjustment.formality) {
+      newAdjustments.formalityAdjust = clamp(
+        newAdjustments.formalityAdjust + adjustment.formality,
+        -2, 2
+      );
+    }
+    if (adjustment.hedging) {
+      newAdjustments.hedgingAdjust = clamp(
+        newAdjustments.hedgingAdjust + adjustment.hedging,
+        -2, 2
+      );
+    }
+
+    // Add rule with HIGH confidence since it's explicit feedback
+    if (adjustment.rule) {
+      // Check if similar rule already exists
+      const existingRule = newAdjustments.learnedRules.find(
+        r => r.rule.toLowerCase().includes(adjustment.rule!.toLowerCase().slice(0, 20))
+      );
+
+      if (existingRule) {
+        // Boost existing rule confidence
+        existingRule.confidence = Math.min(0.95, existingRule.confidence + 0.15);
+      } else {
+        newAdjustments.learnedRules.push({
+          rule: adjustment.rule,
+          confidence: 0.85, // High confidence for explicit feedback
+          source: 'explicit',
+          timestamp: new Date().toISOString(),
+        });
+      }
+    }
+  }
+
+  // Store as an example for example-based learning
+  // But DON'T store word-level details - just the feedback categories
+  const examples = newAdjustments.editExamples || [];
+  examples.push({
+    id: `ex-${Date.now()}`,
+    // Store shorter snippets - we want the pattern, not memorization
+    suggestedEdit: suggestedEdit.slice(0, 200),
+    userVersion: userVersion.slice(0, 200),
+    instruction,
+    feedback,
+    timestamp: new Date().toISOString(),
+  });
+  newAdjustments.editExamples = examples.slice(-5); // Keep fewer examples to prevent overfitting
+
+  return {
+    ...documentPreferences,
+    adjustments: newAdjustments,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Compute word-level diff between suggested edit and user's version.
+ * Returns patterns of what the user typically changes.
+ */
+export function computeWordDiff(suggested: string, userVersion: string): {
+  removals: string[];
+  additions: string[];
+  substitutions: Array<{ from: string; to: string }>;
+} {
+  // Simple word-level diff
+  const suggestedWords = suggested.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+  const userWords = userVersion.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+
+  const suggestedSet = new Set(suggestedWords);
+  const userSet = new Set(userWords);
+
+  // Words in suggested but not in user version (removals)
+  const removals = suggestedWords.filter(w => !userSet.has(w));
+
+  // Words in user version but not in suggested (additions)
+  const additions = userWords.filter(w => !suggestedSet.has(w));
+
+  // Try to find substitutions (words that appear in similar positions)
+  const substitutions: Array<{ from: string; to: string }> = [];
+
+  // Simple heuristic: if a word was removed and another added nearby, it might be a substitution
+  for (const removed of removals.slice(0, 5)) {
+    const removedIndex = suggestedWords.indexOf(removed);
+    for (const added of additions.slice(0, 5)) {
+      const addedIndex = userWords.indexOf(added);
+      // If they're in similar relative positions, consider it a substitution
+      if (Math.abs(removedIndex / suggestedWords.length - addedIndex / userWords.length) < 0.1) {
+        substitutions.push({ from: removed, to: added });
+        break;
+      }
+    }
+  }
+
+  return {
+    removals: [...new Set(removals)].slice(0, 10),
+    additions: [...new Set(additions)].slice(0, 10),
+    substitutions: substitutions.slice(0, 5),
+  };
+}
+
+/**
+ * Learn from word-level diffs in REJECTIONS only.
+ *
+ * IMPORTANT: We track patterns but are VERY conservative about converting
+ * them to word preferences. Word choices are contextual - just because
+ * a user rejected "utilize" once doesn't mean they always want "use".
+ *
+ * We only convert to avoid/prefer words when:
+ * - The pattern has been seen 5+ times (strong signal)
+ * - Confidence is very high (0.85+)
+ */
+export function learnFromDiff(params: {
+  suggestedEdit: string;
+  userVersion: string;
+  documentPreferences: DocumentPreferences;
+}): DocumentPreferences {
+  const { suggestedEdit, userVersion, documentPreferences } = params;
+
+  const diff = computeWordDiff(suggestedEdit, userVersion);
+  const patterns = [...(documentPreferences.adjustments.diffPatterns || [])];
+
+  // Update removal patterns (words user removed from suggestions)
+  for (const word of diff.removals) {
+    // Skip very common words that are likely contextual
+    if (word.length < 4) continue;
+
+    const existing = patterns.find(p => p.type === 'removal' && p.pattern === word);
+    if (existing) {
+      existing.count++;
+      // Slower confidence growth - need more evidence
+      existing.confidence = Math.min(0.95, 0.3 + existing.count * 0.1);
+    } else {
+      patterns.push({
+        type: 'removal',
+        pattern: word,
+        count: 1,
+        confidence: 0.3, // Start low
+      });
+    }
+  }
+
+  // Track substitutions but DON'T automatically convert to preferWords
+  // Substitutions are almost always contextual
+  for (const sub of diff.substitutions) {
+    if (sub.from.length < 4 || sub.to.length < 4) continue;
+
+    const existing = patterns.find(
+      p => p.type === 'substitution' && p.pattern === sub.from
+    );
+    if (existing) {
+      existing.count++;
+      existing.confidence = Math.min(0.95, 0.3 + existing.count * 0.1);
+      // Only update replacement if it's consistent
+      if (existing.replacement === sub.to) {
+        existing.confidence += 0.05; // Bonus for consistency
+      }
+    } else {
+      patterns.push({
+        type: 'substitution',
+        pattern: sub.from,
+        replacement: sub.to,
+        count: 1,
+        confidence: 0.3,
+      });
+    }
+  }
+
+  // Only keep patterns that have been seen multiple times
+  const filteredPatterns = patterns
+    .filter(p => p.count >= 2)
+    .slice(-20); // Keep fewer patterns
+
+  // VERY conservative conversion to avoid/prefer words
+  // Only for patterns seen 5+ times with high confidence
+  const WORD_THRESHOLD_COUNT = 5;
+  const WORD_THRESHOLD_CONFIDENCE = 0.85;
+
+  const newAvoidWords = [...documentPreferences.adjustments.additionalAvoidWords];
+  for (const p of filteredPatterns) {
+    if (p.type === 'removal' &&
+        p.count >= WORD_THRESHOLD_COUNT &&
+        p.confidence >= WORD_THRESHOLD_CONFIDENCE &&
+        !newAvoidWords.includes(p.pattern)) {
+      newAvoidWords.push(p.pattern);
+      console.log(`Added "${p.pattern}" to avoidWords after ${p.count} rejections`);
+    }
+  }
+
+  // Don't convert substitutions to preferWords - too context-dependent
+  // Just keep them as tracked patterns for analysis
+
+  return {
+    ...documentPreferences,
+    adjustments: {
+      ...documentPreferences.adjustments,
+      diffPatterns: filteredPatterns,
+      // Keep prefer words as-is, don't add from diff
+      additionalAvoidWords: newAvoidWords.slice(0, 30), // Lower cap
+    },
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Consolidate learned rules by merging similar rules into stronger, unified directives.
+ * This should be called when rules accumulate to prevent dilution.
+ */
+export async function consolidateLearnedRules(params: {
+  rules: LearnedRule[];
+  model?: string;
+}): Promise<LearnedRule[]> {
+  const { rules, model } = params;
+
+  // Don't consolidate if we have few rules
+  if (rules.length < 5) {
+    return rules;
+  }
+
+  const providerConfig = getDefaultProviderConfig(model);
+  const provider = await createProvider(providerConfig);
+
+  const rulesText = rules.map((r, i) =>
+    `${i + 1}. [confidence: ${r.confidence.toFixed(2)}] ${r.rule}`
+  ).join('\n');
+
+  const prompt = `You are a preference consolidation agent. Analyze these learned editing rules and consolidate similar ones into stronger, unified directives.
+
+CURRENT RULES:
+${rulesText}
+
+TASK:
+1. Identify rules that express similar or related preferences
+2. Merge similar rules into ONE clear, strong directive
+3. Boost confidence when multiple rules agree (max 0.95)
+4. Keep distinct rules separate
+5. Use DIRECT, IMPERATIVE language (e.g., "NEVER add..." not "The user prefers not to...")
+6. Maximum 8 consolidated rules
+
+Respond with a JSON array:
+[
+  {
+    "rule": "<clear, strong directive>",
+    "confidence": <0.5-0.95 based on how many rules support this>,
+    "mergedFrom": [<indices of original rules that were merged, 1-indexed>]
+  }
+]
+
+Important:
+- If 3+ rules say similar things, confidence should be 0.85+
+- If 2 rules agree, confidence should be 0.7-0.8
+- Single rules keep their original confidence
+- Use strong language: "ALWAYS", "NEVER", "MUST", "DO NOT"
+
+Return ONLY the JSON array.`;
+
+  try {
+    const result = await provider.complete({
+      messages: [
+        { role: 'system', content: 'You are a preference consolidation agent. Respond only with valid JSON.' },
+        { role: 'user', content: prompt },
+      ],
+      temperature: 0.1, // Very low for consistent consolidation
+    });
+
+    const jsonMatch = result.content.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) {
+      console.error('Failed to parse consolidation response');
+      return rules.slice(-8); // Fallback: keep recent rules
+    }
+
+    const parsed = JSON.parse(jsonMatch[0]) as Array<{
+      rule: string;
+      confidence: number;
+      mergedFrom: number[];
+    }>;
+
+    // Convert to LearnedRule format
+    const consolidated: LearnedRule[] = parsed.map((p) => ({
+      rule: p.rule,
+      confidence: Math.min(0.95, Math.max(0.5, p.confidence)),
+      source: 'inferred' as const,
+      timestamp: new Date().toISOString(),
+    }));
+
+    console.log(`Consolidated ${rules.length} rules into ${consolidated.length} rules`);
+    return consolidated;
+  } catch (error) {
+    console.error('Rule consolidation error:', error);
+    return rules.slice(-8); // Fallback: keep recent rules
+  }
 }

@@ -119,6 +119,7 @@ export default function SettingsPage() {
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>('');
   const [darkMode, setDarkMode] = useState<'system' | 'light' | 'dark'>('system');
+  const [themeLoaded, setThemeLoaded] = useState(false);
 
   useEffect(() => {
     fetchPreferences();
@@ -128,17 +129,20 @@ export default function SettingsPage() {
     if (savedTheme) {
       setDarkMode(savedTheme);
     }
+    setThemeLoaded(true);
   }, []);
 
-  // Apply dark mode
+  // Apply dark mode (only after theme is loaded to avoid overwriting saved value)
   useEffect(() => {
+    if (!themeLoaded) return;
+
     const root = window.document.documentElement;
     root.classList.remove('light', 'dark');
     if (darkMode !== 'system') {
       root.classList.add(darkMode);
     }
     localStorage.setItem(THEME_STORAGE_KEY, darkMode);
-  }, [darkMode]);
+  }, [darkMode, themeLoaded]);
 
   async function fetchModels() {
     try {
@@ -841,13 +845,13 @@ export default function SettingsPage() {
         </div>
       </section>
 
-      {/* Profile Edit/View Modal */}
+      {/* Profile Edit Modal */}
       {editingProfile && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-[var(--background)] rounded-lg max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col">
             {/* Modal Header */}
             <div className="flex items-center justify-between p-4 border-b border-[var(--border)]">
-              <h2 className="text-lg font-semibold">{editingProfile.name}</h2>
+              <h2 className="text-lg font-semibold">Edit Profile</h2>
               <button
                 onClick={() => setEditingProfile(null)}
                 className="p-1 hover:bg-[var(--muted)] rounded"
@@ -860,85 +864,162 @@ export default function SettingsPage() {
 
             {/* Modal Content */}
             <div className="flex-1 overflow-y-auto p-4 space-y-6">
-              {/* Profile Details */}
+              {/* Name */}
               <div>
-                <h3 className="font-medium mb-2">Profile Details</h3>
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="text-[var(--muted-foreground)]">Jargon Level:</span>
-                    <span className="ml-2">{editingProfile.jargonLevel}</span>
-                  </div>
-                  <div>
-                    <span className="text-[var(--muted-foreground)]">Source:</span>
-                    <span className="ml-2">{editingProfile.source}</span>
-                  </div>
-                  <div>
-                    <span className="text-[var(--muted-foreground)]">Length:</span>
-                    <span className="ml-2">{editingProfile.lengthGuidance?.target || 'standard'}</span>
-                  </div>
-                  {editingProfile.inferredFrom && (
-                    <div>
-                      <span className="text-[var(--muted-foreground)]">Based on:</span>
-                      <span className="ml-2">{editingProfile.inferredFrom.length} conversations</span>
-                    </div>
-                  )}
-                </div>
+                <label className="block text-sm font-medium mb-1">Profile Name</label>
+                <input
+                  type="text"
+                  value={editingProfile.name}
+                  onChange={(e) => setEditingProfile({ ...editingProfile, name: e.target.value })}
+                  className="w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)]"
+                />
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="block text-sm font-medium mb-1">Description</label>
+                <textarea
+                  value={editingProfile.description || ''}
+                  onChange={(e) => setEditingProfile({ ...editingProfile, description: e.target.value })}
+                  className="w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] h-20 resize-none"
+                  placeholder="Describe this profile's purpose..."
+                />
+              </div>
+
+              {/* Jargon Level */}
+              <div>
+                <label className="block text-sm font-medium mb-1">Jargon Level</label>
+                <select
+                  value={editingProfile.jargonLevel}
+                  onChange={(e) => setEditingProfile({ ...editingProfile, jargonLevel: e.target.value as 'minimal' | 'moderate' | 'heavy' })}
+                  className="w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)]"
+                >
+                  <option value="minimal">Minimal - Accessible to general audience</option>
+                  <option value="moderate">Moderate - Some technical terms</option>
+                  <option value="heavy">Heavy - Full technical language</option>
+                </select>
               </div>
 
               {/* Emphasis Points */}
-              {editingProfile.emphasisPoints.length > 0 && (
-                <div>
-                  <h3 className="font-medium mb-2">Emphasis Points</h3>
-                  <div className="flex flex-wrap gap-2">
-                    {editingProfile.emphasisPoints.map((point) => (
-                      <span key={point} className="px-3 py-1 bg-[var(--muted)] rounded-full text-sm">
-                        {point}
-                      </span>
-                    ))}
-                  </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Emphasis Points</label>
+                <p className="text-xs text-[var(--muted-foreground)] mb-2">Key themes or concepts to emphasize</p>
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {editingProfile.emphasisPoints.map((point, i) => (
+                    <span key={i} className="px-3 py-1 bg-[var(--muted)] rounded-full text-sm flex items-center gap-1">
+                      {point}
+                      <button
+                        onClick={() => setEditingProfile({
+                          ...editingProfile,
+                          emphasisPoints: editingProfile.emphasisPoints.filter((_, idx) => idx !== i)
+                        })}
+                        className="ml-1 text-[var(--muted-foreground)] hover:text-red-500"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
                 </div>
-              )}
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Add emphasis point..."
+                    className="flex-1 px-3 py-1.5 text-sm border border-[var(--border)] rounded-lg bg-[var(--background)]"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && e.currentTarget.value.trim()) {
+                        setEditingProfile({
+                          ...editingProfile,
+                          emphasisPoints: [...editingProfile.emphasisPoints, e.currentTarget.value.trim()]
+                        });
+                        e.currentTarget.value = '';
+                      }
+                    }}
+                  />
+                </div>
+              </div>
 
               {/* Framing Guidance */}
-              {editingProfile.framingGuidance.length > 0 && (
-                <div>
-                  <h3 className="font-medium mb-2">Framing Guidance</h3>
-                  <ul className="list-disc list-inside space-y-1 text-sm">
-                    {editingProfile.framingGuidance.map((guidance, i) => (
-                      <li key={i}>{guidance}</li>
-                    ))}
-                  </ul>
+              <div>
+                <label className="block text-sm font-medium mb-1">Framing Guidance</label>
+                <p className="text-xs text-[var(--muted-foreground)] mb-2">Guidelines for how to frame content</p>
+                <div className="space-y-2 mb-2">
+                  {editingProfile.framingGuidance.map((guidance, i) => (
+                    <div key={i} className="flex items-start gap-2">
+                      <input
+                        type="text"
+                        value={guidance}
+                        onChange={(e) => {
+                          const newGuidance = [...editingProfile.framingGuidance];
+                          newGuidance[i] = e.target.value;
+                          setEditingProfile({ ...editingProfile, framingGuidance: newGuidance });
+                        }}
+                        className="flex-1 px-3 py-1.5 text-sm border border-[var(--border)] rounded-lg bg-[var(--background)]"
+                      />
+                      <button
+                        onClick={() => setEditingProfile({
+                          ...editingProfile,
+                          framingGuidance: editingProfile.framingGuidance.filter((_, idx) => idx !== i)
+                        })}
+                        className="p-1.5 text-[var(--muted-foreground)] hover:text-red-500"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
                 </div>
-              )}
+                <button
+                  onClick={() => setEditingProfile({
+                    ...editingProfile,
+                    framingGuidance: [...editingProfile.framingGuidance, '']
+                  })}
+                  className="text-sm text-[var(--primary)] hover:underline"
+                >
+                  + Add guidance
+                </button>
+              </div>
 
               {/* Discipline Terms */}
-              {editingProfile.disciplineTerms.length > 0 && (
-                <div>
-                  <h3 className="font-medium mb-2">Domain Terms</h3>
-                  <div className="flex flex-wrap gap-2">
-                    {editingProfile.disciplineTerms.map((term) => (
-                      <span key={term} className="px-2 py-1 bg-[var(--muted)] rounded text-xs">
-                        {term}
-                      </span>
-                    ))}
-                  </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Domain Terms</label>
+                <p className="text-xs text-[var(--muted-foreground)] mb-2">Technical terms appropriate for this audience</p>
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {editingProfile.disciplineTerms.map((term, i) => (
+                    <span key={i} className="px-2 py-1 bg-[var(--muted)] rounded text-xs flex items-center gap-1">
+                      {term}
+                      <button
+                        onClick={() => setEditingProfile({
+                          ...editingProfile,
+                          disciplineTerms: editingProfile.disciplineTerms.filter((_, idx) => idx !== i)
+                        })}
+                        className="ml-1 text-[var(--muted-foreground)] hover:text-red-500"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
                 </div>
-              )}
-
-              {/* Style Overrides */}
-              {Object.keys(editingProfile.overrides).length > 0 && (
-                <div>
-                  <h3 className="font-medium mb-2">Style Overrides</h3>
-                  <pre className="text-xs bg-[var(--muted)] p-3 rounded overflow-x-auto">
-                    {JSON.stringify(editingProfile.overrides, null, 2)}
-                  </pre>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Add domain term..."
+                    className="flex-1 px-3 py-1.5 text-sm border border-[var(--border)] rounded-lg bg-[var(--background)]"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && e.currentTarget.value.trim()) {
+                        setEditingProfile({
+                          ...editingProfile,
+                          disciplineTerms: [...editingProfile.disciplineTerms, e.currentTarget.value.trim()]
+                        });
+                        e.currentTarget.value = '';
+                      }
+                    }}
+                  />
                 </div>
-              )}
+              </div>
 
-              {/* Generated Prompt for ChatGPT */}
+              {/* Generated Prompt Preview */}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <h3 className="font-medium">ChatGPT Custom Instructions</h3>
+                  <h3 className="font-medium">ChatGPT Custom Instructions Preview</h3>
                   <button
                     onClick={() => {
                       const prompt = generatePromptForProfile(store.baseStyle, editingProfile);
@@ -947,13 +1028,10 @@ export default function SettingsPage() {
                     }}
                     className="px-3 py-1 text-sm bg-[var(--primary)] text-[var(--primary-foreground)] rounded hover:opacity-90"
                   >
-                    Copy to Clipboard
+                    Copy
                   </button>
                 </div>
-                <p className="text-xs text-[var(--muted-foreground)] mb-2">
-                  Paste this into ChatGPT Settings → Personalization → Custom Instructions
-                </p>
-                <pre className="text-xs bg-[var(--muted)] p-3 rounded overflow-x-auto whitespace-pre-wrap max-h-64">
+                <pre className="text-xs bg-[var(--muted)] p-3 rounded overflow-x-auto whitespace-pre-wrap max-h-40">
                   {generatePromptForProfile(store.baseStyle, editingProfile)}
                 </pre>
               </div>
@@ -965,7 +1043,38 @@ export default function SettingsPage() {
                 onClick={() => setEditingProfile(null)}
                 className="px-4 py-2 border border-[var(--border)] rounded-lg hover:bg-[var(--muted)]"
               >
-                Close
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    // Save the edited profile via API
+                    const res = await fetch(`/api/preferences/profiles/${editingProfile.id}`, {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify(editingProfile),
+                    });
+
+                    if (!res.ok) {
+                      throw new Error('Failed to save profile');
+                    }
+
+                    const updatedProfile = await res.json();
+                    setStore((prev) => prev ? {
+                      ...prev,
+                      audienceProfiles: prev.audienceProfiles.map(p =>
+                        p.id === editingProfile.id ? updatedProfile : p
+                      )
+                    } : null);
+                    setEditingProfile(null);
+                    setMessage({ type: 'success', text: 'Profile updated!' });
+                  } catch (err) {
+                    setMessage({ type: 'error', text: 'Failed to save profile' });
+                  }
+                }}
+                className="px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-lg hover:opacity-90"
+              >
+                Save Changes
               </button>
             </div>
           </div>

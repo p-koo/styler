@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import type { DocumentAdjustments, AudienceProfile, LearnedRule } from '@/types';
+import type { DocumentAdjustments, AudienceProfile, LearnedRule, DocumentGoals } from '@/types';
 
 interface DocumentProfilePanelProps {
   documentId: string;
@@ -20,7 +20,7 @@ const DEFAULT_ADJUSTMENTS: DocumentAdjustments = {
   learnedRules: [],
 };
 
-type TabType = 'style' | 'words' | 'guidance' | 'import';
+type TabType = 'style' | 'words' | 'guidance' | 'goals' | 'import';
 
 /**
  * Global document profile panel - comprehensive document-specific preferences
@@ -58,6 +58,13 @@ export default function DocumentProfilePanel({
   const [mergeTarget, setMergeTarget] = useState<string>('new');
   const [newProfileName, setNewProfileName] = useState('');
   const [merging, setMerging] = useState(false);
+
+  // For goals tab
+  const [goalsEditing, setGoalsEditing] = useState(false);
+  const [editedGoals, setEditedGoals] = useState<Partial<DocumentGoals>>({});
+  const [originalGoals, setOriginalGoals] = useState<DocumentGoals | undefined>(undefined);
+  const [analyzingGoals, setAnalyzingGoals] = useState(false);
+  const [expandedGoalField, setExpandedGoalField] = useState<string | null>(null);
 
   // For import constraints
   const [importText, setImportText] = useState('');
@@ -102,6 +109,9 @@ export default function DocumentProfilePanel({
     const interval = setInterval(loadPreferences, 3000);
     return () => clearInterval(interval);
   }, [loadPreferences]);
+
+  // Track if auto-analysis has been attempted
+  const [autoAnalyzed, setAutoAnalyzed] = useState(false);
 
   // Save adjustments
   const saveAdjustments = async (newAdjustments: Partial<DocumentAdjustments>) => {
@@ -305,6 +315,162 @@ export default function DocumentProfilePanel({
     await handleExtractConstraints(false);
   };
 
+  // Analyze document goals
+  const handleAnalyzeGoals = async () => {
+    setAnalyzingGoals(true);
+    try {
+      const res = await fetch(`/api/documents/${documentId}/goals`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await res.json();
+
+      if (!res.ok) throw new Error(data.error);
+
+      if (data.goals) {
+        setAdjustments(prev => ({
+          ...prev,
+          documentGoals: data.goals,
+        }));
+        setLastUpdated(new Date().toISOString());
+      }
+    } catch (err) {
+      // Only show alert for manual triggers, not auto-analyze
+      if (autoAnalyzed) {
+        alert(err instanceof Error ? err.message : 'Failed to analyze goals');
+      } else {
+        console.error('Auto-analyze goals failed:', err);
+      }
+    } finally {
+      setAnalyzingGoals(false);
+    }
+  };
+
+  // Auto-generate goals when document loads if none exist
+  useEffect(() => {
+    // Only run once after initial load, if no goals exist
+    if (!loading && !autoAnalyzed && !adjustments.documentGoals?.summary && !analyzingGoals) {
+      setAutoAnalyzed(true);
+      // Trigger goal analysis automatically
+      handleAnalyzeGoals();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, autoAnalyzed, adjustments.documentGoals?.summary, analyzingGoals]);
+
+  // Save edited goals
+  const handleSaveGoals = async () => {
+    const updatedGoals: DocumentGoals = {
+      summary: editedGoals.summary || adjustments.documentGoals?.summary || '',
+      objectives: editedGoals.objectives || adjustments.documentGoals?.objectives || [],
+      mainArgument: editedGoals.mainArgument || adjustments.documentGoals?.mainArgument,
+      audienceNeeds: editedGoals.audienceNeeds || adjustments.documentGoals?.audienceNeeds,
+      successCriteria: editedGoals.successCriteria || adjustments.documentGoals?.successCriteria,
+      updatedAt: new Date().toISOString(),
+      userEdited: true, // Mark as user-edited
+    };
+
+    try {
+      await fetch(`/api/documents/${documentId}/preferences`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          adjustments: { documentGoals: updatedGoals },
+        }),
+      });
+      setAdjustments(prev => ({
+        ...prev,
+        documentGoals: updatedGoals,
+      }));
+      setGoalsEditing(false);
+      setEditedGoals({});
+      setLastUpdated(new Date().toISOString());
+    } catch (err) {
+      alert('Failed to save goals');
+    }
+  };
+
+  // Start editing goals
+  const startEditingGoals = () => {
+    // Store original goals for cancel/revert
+    setOriginalGoals(adjustments.documentGoals ? { ...adjustments.documentGoals } : undefined);
+    setEditedGoals({
+      summary: adjustments.documentGoals?.summary || '',
+      objectives: adjustments.documentGoals?.objectives || [],
+      mainArgument: adjustments.documentGoals?.mainArgument || '',
+      audienceNeeds: adjustments.documentGoals?.audienceNeeds || '',
+      successCriteria: adjustments.documentGoals?.successCriteria || '',
+    });
+    setExpandedGoalField('summary'); // Start with summary expanded
+    setGoalsEditing(true);
+  };
+
+  // Cancel editing goals (revert to original)
+  const cancelEditingGoals = () => {
+    // Revert to original goals
+    if (originalGoals) {
+      setAdjustments(prev => ({
+        ...prev,
+        documentGoals: originalGoals,
+      }));
+    }
+    setGoalsEditing(false);
+    setEditedGoals({});
+    setOriginalGoals(undefined);
+    setExpandedGoalField(null);
+  };
+
+  // Clear all goals
+  const handleClearGoals = async () => {
+    if (!confirm('Clear all document goals?')) return;
+    try {
+      await fetch(`/api/documents/${documentId}/preferences`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          adjustments: { documentGoals: undefined },
+        }),
+      });
+      setAdjustments(prev => ({
+        ...prev,
+        documentGoals: undefined,
+      }));
+      setGoalsEditing(false);
+      setEditedGoals({});
+      setLastUpdated(new Date().toISOString());
+    } catch (err) {
+      alert('Failed to clear goals');
+    }
+  };
+
+  // Toggle goals lock (prevent Intent Agent from auto-updating)
+  const handleToggleLock = async () => {
+    if (!adjustments.documentGoals) return;
+
+    const newLocked = !adjustments.documentGoals.locked;
+    const updatedGoals = {
+      ...adjustments.documentGoals,
+      locked: newLocked,
+      updatedAt: new Date().toISOString(),
+    };
+
+    try {
+      await fetch(`/api/documents/${documentId}/preferences`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          adjustments: { documentGoals: updatedGoals },
+        }),
+      });
+      setAdjustments(prev => ({
+        ...prev,
+        documentGoals: updatedGoals,
+      }));
+      setLastUpdated(new Date().toISOString());
+    } catch (err) {
+      alert('Failed to update lock state');
+    }
+  };
+
   // Handle file upload (PDF text extraction)
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -394,7 +560,7 @@ export default function DocumentProfilePanel({
 
       {/* Tabs */}
       <div className="flex border-b border-[var(--border)]">
-        {(['style', 'words', 'guidance', 'import'] as TabType[]).map(tab => (
+        {(['style', 'words', 'guidance', 'goals', 'import'] as TabType[]).map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -630,6 +796,268 @@ export default function DocumentProfilePanel({
                 />
                 <button onClick={addRule} className="px-2 py-1 text-xs bg-purple-50 text-purple-600 rounded hover:bg-purple-100">Add</button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Goals Tab */}
+        {activeTab === 'goals' && (
+          <div className="space-y-4">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-xs font-medium">Document Goals</h4>
+                <div className="flex items-center gap-2">
+                  {adjustments.documentGoals?.userEdited && (
+                    <span className="text-[9px] px-1.5 py-0.5 bg-blue-100 text-blue-600 rounded">Edited</span>
+                  )}
+                  {adjustments.documentGoals?.summary && (
+                    <button
+                      onClick={handleToggleLock}
+                      className={`text-[9px] px-1.5 py-0.5 rounded flex items-center gap-1 ${
+                        adjustments.documentGoals?.locked
+                          ? 'bg-amber-100 text-amber-700'
+                          : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                      }`}
+                      title={adjustments.documentGoals?.locked ? 'Unlock to allow auto-updates' : 'Lock to prevent auto-updates'}
+                    >
+                      {adjustments.documentGoals?.locked ? '🔒 Locked' : '🔓 Auto-update'}
+                    </button>
+                  )}
+                </div>
+              </div>
+              <p className="text-[10px] text-[var(--muted-foreground)] mb-3">
+                {adjustments.documentGoals?.locked
+                  ? 'Goals are locked. The Intent Agent will not auto-update them.'
+                  : 'Goals help the AI understand your document\'s purpose. They auto-update as your document evolves.'}
+              </p>
+
+              {goalsEditing ? (
+                /* Editing Mode - Expandable Sections */
+                <div className="space-y-2">
+                  {/* Summary */}
+                  <div className="border border-[var(--border)] rounded-lg overflow-hidden">
+                    <button
+                      onClick={() => setExpandedGoalField(expandedGoalField === 'summary' ? null : 'summary')}
+                      className="w-full flex items-center justify-between p-2 bg-[var(--muted)]/30 hover:bg-[var(--muted)]/50 text-left"
+                    >
+                      <span className="text-[10px] font-medium">Summary</span>
+                      <span className="text-xs">{expandedGoalField === 'summary' ? '▼' : '▶'}</span>
+                    </button>
+                    {expandedGoalField === 'summary' && (
+                      <div className="p-2">
+                        <textarea
+                          value={editedGoals.summary || ''}
+                          onChange={e => setEditedGoals(prev => ({ ...prev, summary: e.target.value }))}
+                          placeholder="What is this document trying to accomplish?"
+                          className="w-full p-2 text-xs border border-[var(--border)] rounded bg-[var(--background)] resize-y min-h-[100px]"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Main Argument */}
+                  <div className="border border-[var(--border)] rounded-lg overflow-hidden">
+                    <button
+                      onClick={() => setExpandedGoalField(expandedGoalField === 'mainArgument' ? null : 'mainArgument')}
+                      className="w-full flex items-center justify-between p-2 bg-[var(--muted)]/30 hover:bg-[var(--muted)]/50 text-left"
+                    >
+                      <span className="text-[10px] font-medium">Main Argument/Thesis</span>
+                      <span className="text-xs">{expandedGoalField === 'mainArgument' ? '▼' : '▶'}</span>
+                    </button>
+                    {expandedGoalField === 'mainArgument' && (
+                      <div className="p-2">
+                        <textarea
+                          value={editedGoals.mainArgument || ''}
+                          onChange={e => setEditedGoals(prev => ({ ...prev, mainArgument: e.target.value }))}
+                          placeholder="The central claim or thesis"
+                          className="w-full p-2 text-xs border border-[var(--border)] rounded bg-[var(--background)] resize-y min-h-[80px]"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Objectives */}
+                  <div className="border border-[var(--border)] rounded-lg overflow-hidden">
+                    <button
+                      onClick={() => setExpandedGoalField(expandedGoalField === 'objectives' ? null : 'objectives')}
+                      className="w-full flex items-center justify-between p-2 bg-[var(--muted)]/30 hover:bg-[var(--muted)]/50 text-left"
+                    >
+                      <span className="text-[10px] font-medium">Key Objectives</span>
+                      <span className="text-xs">{expandedGoalField === 'objectives' ? '▼' : '▶'}</span>
+                    </button>
+                    {expandedGoalField === 'objectives' && (
+                      <div className="p-2">
+                        <textarea
+                          value={(editedGoals.objectives || []).join('\n')}
+                          onChange={e => setEditedGoals(prev => ({
+                            ...prev,
+                            objectives: e.target.value.split('\n').filter(o => o.trim())
+                          }))}
+                          placeholder="One objective per line"
+                          className="w-full p-2 text-xs border border-[var(--border)] rounded bg-[var(--background)] resize-y min-h-[120px] font-mono"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Audience Needs */}
+                  <div className="border border-[var(--border)] rounded-lg overflow-hidden">
+                    <button
+                      onClick={() => setExpandedGoalField(expandedGoalField === 'audienceNeeds' ? null : 'audienceNeeds')}
+                      className="w-full flex items-center justify-between p-2 bg-[var(--muted)]/30 hover:bg-[var(--muted)]/50 text-left"
+                    >
+                      <span className="text-[10px] font-medium">Audience Needs</span>
+                      <span className="text-xs">{expandedGoalField === 'audienceNeeds' ? '▼' : '▶'}</span>
+                    </button>
+                    {expandedGoalField === 'audienceNeeds' && (
+                      <div className="p-2">
+                        <textarea
+                          value={editedGoals.audienceNeeds || ''}
+                          onChange={e => setEditedGoals(prev => ({ ...prev, audienceNeeds: e.target.value }))}
+                          placeholder="What does the reader need from this document?"
+                          className="w-full p-2 text-xs border border-[var(--border)] rounded bg-[var(--background)] resize-y min-h-[80px]"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Success Criteria */}
+                  <div className="border border-[var(--border)] rounded-lg overflow-hidden">
+                    <button
+                      onClick={() => setExpandedGoalField(expandedGoalField === 'successCriteria' ? null : 'successCriteria')}
+                      className="w-full flex items-center justify-between p-2 bg-[var(--muted)]/30 hover:bg-[var(--muted)]/50 text-left"
+                    >
+                      <span className="text-[10px] font-medium">Success Criteria</span>
+                      <span className="text-xs">{expandedGoalField === 'successCriteria' ? '▼' : '▶'}</span>
+                    </button>
+                    {expandedGoalField === 'successCriteria' && (
+                      <div className="p-2">
+                        <textarea
+                          value={editedGoals.successCriteria || ''}
+                          onChange={e => setEditedGoals(prev => ({ ...prev, successCriteria: e.target.value }))}
+                          placeholder="What does success look like for this document?"
+                          className="w-full p-2 text-xs border border-[var(--border)] rounded bg-[var(--background)] resize-y min-h-[80px]"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex gap-2 pt-2">
+                    <button
+                      onClick={cancelEditingGoals}
+                      className="flex-1 py-2 border border-[var(--border)] rounded-lg hover:bg-[var(--muted)] text-xs"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleSaveGoals}
+                      className="flex-1 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-xs"
+                    >
+                      Save Goals
+                    </button>
+                  </div>
+                </div>
+              ) : adjustments.documentGoals?.summary ? (
+                /* Display Mode */
+                <div className="space-y-3">
+                  <div className="p-3 bg-[var(--muted)]/30 rounded-lg">
+                    <div className="text-[10px] font-medium text-purple-600 mb-1">Summary</div>
+                    <p className="text-xs text-[var(--foreground)]">{adjustments.documentGoals.summary}</p>
+                  </div>
+
+                  {adjustments.documentGoals.mainArgument && (
+                    <div className="p-3 bg-[var(--muted)]/30 rounded-lg">
+                      <div className="text-[10px] font-medium text-purple-600 mb-1">Main Argument</div>
+                      <p className="text-xs text-[var(--foreground)]">{adjustments.documentGoals.mainArgument}</p>
+                    </div>
+                  )}
+
+                  {adjustments.documentGoals.objectives && adjustments.documentGoals.objectives.length > 0 && (
+                    <div className="p-3 bg-[var(--muted)]/30 rounded-lg">
+                      <div className="text-[10px] font-medium text-purple-600 mb-1">Objectives</div>
+                      <ul className="space-y-1">
+                        {adjustments.documentGoals.objectives.map((obj, i) => (
+                          <li key={i} className="text-xs text-[var(--foreground)] flex items-start gap-2">
+                            <span className="text-purple-500">•</span>
+                            {obj}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {adjustments.documentGoals.audienceNeeds && (
+                    <div className="p-3 bg-[var(--muted)]/30 rounded-lg">
+                      <div className="text-[10px] font-medium text-purple-600 mb-1">Audience Needs</div>
+                      <p className="text-xs text-[var(--foreground)]">{adjustments.documentGoals.audienceNeeds}</p>
+                    </div>
+                  )}
+
+                  {adjustments.documentGoals.successCriteria && (
+                    <div className="p-3 bg-[var(--muted)]/30 rounded-lg">
+                      <div className="text-[10px] font-medium text-purple-600 mb-1">Success Criteria</div>
+                      <p className="text-xs text-[var(--foreground)]">{adjustments.documentGoals.successCriteria}</p>
+                    </div>
+                  )}
+
+                  <div className="flex gap-2">
+                    <button
+                      onClick={startEditingGoals}
+                      className="flex-1 py-2 border border-[var(--border)] rounded-lg hover:bg-[var(--muted)] text-xs"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={handleAnalyzeGoals}
+                      disabled={analyzingGoals}
+                      className="flex-1 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-xs disabled:opacity-50"
+                    >
+                      {analyzingGoals ? 'Analyzing...' : 'Re-analyze'}
+                    </button>
+                    <button
+                      onClick={handleClearGoals}
+                      className="px-3 py-2 border border-red-200 text-red-600 rounded-lg hover:bg-red-50 text-xs"
+                      title="Clear all goals"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+              ) : analyzingGoals ? (
+                /* Loading state */
+                <div className="text-center py-8">
+                  <div className="text-3xl mb-3 animate-pulse">🎯</div>
+                  <p className="text-xs text-purple-600 font-medium mb-2">
+                    Analyzing document goals...
+                  </p>
+                  <p className="text-[10px] text-[var(--muted-foreground)]">
+                    The Intent Agent is synthesizing your document's purpose and objectives.
+                  </p>
+                </div>
+              ) : (
+                /* No goals yet */
+                <div className="text-center py-6">
+                  <div className="text-3xl mb-2">🎯</div>
+                  <p className="text-xs text-[var(--muted-foreground)] mb-4">
+                    No document goals defined yet. Goals help the AI understand your document's purpose and align edits accordingly.
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={startEditingGoals}
+                      className="flex-1 py-2 border border-[var(--border)] rounded-lg hover:bg-[var(--muted)] text-xs"
+                    >
+                      Write Goals
+                    </button>
+                    <button
+                      onClick={handleAnalyzeGoals}
+                      disabled={analyzingGoals}
+                      className="flex-1 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-xs disabled:opacity-50"
+                    >
+                      {analyzingGoals ? 'Analyzing...' : 'Auto-analyze'}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}

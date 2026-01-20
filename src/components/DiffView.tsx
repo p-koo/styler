@@ -2,13 +2,40 @@
 
 import { useMemo, useState, useCallback, useRef, useEffect } from 'react';
 
+// Legacy feedback type for the old quick feedback
 type FeedbackType = 'too_long' | 'too_short' | 'too_formal' | 'too_casual' | 'too_hedged' | 'too_bold';
+
+// New comprehensive feedback categories for learning
+export type RejectFeedback =
+  | 'too_formal'
+  | 'too_casual'
+  | 'too_verbose'
+  | 'too_terse'
+  | 'changed_meaning'
+  | 'over_edited'
+  | 'wrong_tone'
+  | 'bad_word_choice'
+  | 'lost_nuance'
+  | 'other';
+
+const REJECT_FEEDBACK_OPTIONS: { value: RejectFeedback; label: string; description: string }[] = [
+  { value: 'over_edited', label: 'Over-edited', description: 'Changed too much, should be minimal' },
+  { value: 'changed_meaning', label: 'Changed meaning', description: 'The core argument/idea was altered' },
+  { value: 'too_formal', label: 'Too formal', description: 'Should be more casual/conversational' },
+  { value: 'too_casual', label: 'Too casual', description: 'Should be more formal/professional' },
+  { value: 'too_verbose', label: 'Too long', description: 'Added unnecessary words' },
+  { value: 'too_terse', label: 'Too short', description: 'Cut important content' },
+  { value: 'wrong_tone', label: 'Wrong tone', description: 'Doesn\'t match my voice' },
+  { value: 'bad_word_choice', label: 'Bad word choice', description: 'Used wrong/inappropriate words' },
+  { value: 'lost_nuance', label: 'Lost nuance', description: 'Subtle distinctions were removed' },
+  { value: 'other', label: 'Other', description: 'Something else' },
+];
 
 interface DiffViewProps {
   original: string;
   edited: string;
   onAccept?: (finalText: string) => void;
-  onReject?: () => void;
+  onReject?: (feedback?: RejectFeedback[]) => void;
   onFeedback?: (feedback: FeedbackType) => void;
   showFeedback?: boolean;
 }
@@ -155,6 +182,10 @@ export default function DiffView({
   const [isManualEdit, setIsManualEdit] = useState(false);
   const [manualText, setManualText] = useState(edited);
 
+  // Reject feedback modal state
+  const [showRejectFeedback, setShowRejectFeedback] = useState(false);
+  const [selectedFeedback, setSelectedFeedback] = useState<Set<RejectFeedback>>(new Set());
+
   const changeCount = changeGroups.length;
   const acceptedCount = Object.values(acceptedChanges).filter(Boolean).length;
 
@@ -208,6 +239,31 @@ export default function DiffView({
         onAccept(buildFinalText());
       }
     }
+  };
+
+  const toggleFeedback = (feedback: RejectFeedback) => {
+    setSelectedFeedback(prev => {
+      const next = new Set(prev);
+      if (next.has(feedback)) {
+        next.delete(feedback);
+      } else {
+        next.add(feedback);
+      }
+      return next;
+    });
+  };
+
+  const handleRejectWithFeedback = () => {
+    if (onReject) {
+      onReject(selectedFeedback.size > 0 ? Array.from(selectedFeedback) : undefined);
+    }
+    setShowRejectFeedback(false);
+    setSelectedFeedback(new Set());
+  };
+
+  const handleQuickReject = () => {
+    // Show feedback options instead of rejecting immediately
+    setShowRejectFeedback(true);
   };
 
   if (changeCount === 0) {
@@ -400,13 +456,60 @@ export default function DiffView({
         </div>
       )}
 
+      {/* Reject Feedback Modal */}
+      {showRejectFeedback && (
+        <div className="px-4 py-3 border-t border-[var(--border)] bg-red-50 dark:bg-red-900/20">
+          <div className="mb-2">
+            <span className="text-sm font-medium text-red-800 dark:text-red-200">
+              What was wrong with this edit? (select all that apply)
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-2 mb-3">
+            {REJECT_FEEDBACK_OPTIONS.map(opt => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => toggleFeedback(opt.value)}
+                title={opt.description}
+                className={`text-xs px-2 py-1 rounded border transition-colors ${
+                  selectedFeedback.has(opt.value)
+                    ? 'bg-red-600 text-white border-red-600'
+                    : 'bg-white dark:bg-gray-800 border-red-300 text-red-700 dark:text-red-300 hover:bg-red-100'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setShowRejectFeedback(false);
+                setSelectedFeedback(new Set());
+              }}
+              className="px-3 py-1 text-xs border border-[var(--border)] rounded hover:bg-[var(--background)]"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleRejectWithFeedback}
+              className="px-3 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700"
+            >
+              {selectedFeedback.size > 0 ? `Discard (${selectedFeedback.size} feedback)` : 'Discard without feedback'}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Actions */}
-      {(onAccept || onReject) && (
+      {(onAccept || onReject) && !showRejectFeedback && (
         <div className="flex justify-end gap-2 px-4 py-3 bg-[var(--muted)] border-t border-[var(--border)]">
           {onReject && (
             <button
               type="button"
-              onClick={onReject}
+              onClick={handleQuickReject}
               className="px-4 py-1.5 text-sm border border-[var(--border)] rounded-lg hover:bg-[var(--background)]"
             >
               Discard
@@ -444,6 +547,34 @@ export function SideBySideDiff({
   const [leftWidth, setLeftWidth] = useState(50); // percentage
   const [isDragging, setIsDragging] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Reject feedback state
+  const [showRejectFeedback, setShowRejectFeedback] = useState(false);
+  const [selectedFeedback, setSelectedFeedback] = useState<Set<RejectFeedback>>(new Set());
+
+  const toggleFeedback = (feedback: RejectFeedback) => {
+    setSelectedFeedback(prev => {
+      const next = new Set(prev);
+      if (next.has(feedback)) {
+        next.delete(feedback);
+      } else {
+        next.add(feedback);
+      }
+      return next;
+    });
+  };
+
+  const handleRejectWithFeedback = () => {
+    if (onReject) {
+      onReject(selectedFeedback.size > 0 ? Array.from(selectedFeedback) : undefined);
+    }
+    setShowRejectFeedback(false);
+    setSelectedFeedback(new Set());
+  };
+
+  const handleQuickReject = () => {
+    setShowRejectFeedback(true);
+  };
 
   // Compute diff for highlighting
   const diff = useMemo(() => computeDiff(original, edited), [original, edited]);
@@ -585,7 +716,7 @@ export function SideBySideDiff({
       </div>
 
       {/* Feedback buttons */}
-      {showFeedback && onFeedback && (
+      {showFeedback && onFeedback && !showRejectFeedback && (
         <div className="px-4 py-2 border-t border-[var(--border)] bg-yellow-50 dark:bg-yellow-900/20">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs text-yellow-700 dark:text-yellow-300 font-medium">Quick feedback:</span>
@@ -599,13 +730,60 @@ export function SideBySideDiff({
         </div>
       )}
 
+      {/* Reject Feedback Modal */}
+      {showRejectFeedback && (
+        <div className="px-4 py-3 border-t border-[var(--border)] bg-red-50 dark:bg-red-900/20">
+          <div className="mb-2">
+            <span className="text-sm font-medium text-red-800 dark:text-red-200">
+              What was wrong with this edit? (select all that apply)
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-2 mb-3">
+            {REJECT_FEEDBACK_OPTIONS.map(opt => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => toggleFeedback(opt.value)}
+                title={opt.description}
+                className={`text-xs px-2 py-1 rounded border transition-colors ${
+                  selectedFeedback.has(opt.value)
+                    ? 'bg-red-600 text-white border-red-600'
+                    : 'bg-white dark:bg-gray-800 border-red-300 text-red-700 dark:text-red-300 hover:bg-red-100'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setShowRejectFeedback(false);
+                setSelectedFeedback(new Set());
+              }}
+              className="px-3 py-1 text-xs border border-[var(--border)] rounded hover:bg-[var(--background)]"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleRejectWithFeedback}
+              className="px-3 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700"
+            >
+              {selectedFeedback.size > 0 ? `Discard (${selectedFeedback.size} feedback)` : 'Discard without feedback'}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Actions */}
-      {(onAccept || onReject) && (
+      {(onAccept || onReject) && !showRejectFeedback && (
         <div className="flex justify-end gap-2 px-4 py-3 bg-[var(--muted)] border-t border-[var(--border)]">
           {onReject && (
             <button
               type="button"
-              onClick={onReject}
+              onClick={handleQuickReject}
               className="px-4 py-1.5 text-sm border border-[var(--border)] rounded-lg hover:bg-[var(--background)]"
             >
               Discard

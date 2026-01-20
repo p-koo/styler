@@ -38,6 +38,10 @@ export interface SavedDocument {
   };
   selectedProfileId?: string | null;  // Remember which profile was selected for this document
   syntaxMode?: 'plain' | 'markdown' | 'latex';  // Syntax highlighting mode
+  // Separate custom instructions for each edit mode
+  stylerInstruction?: string;  // Custom instruction for Styler Edit (single-cell)
+  vibeGuidance?: string;       // Custom guidance for Vibe Edit (document-level)
+  vibeSelectedPresets?: string[]; // Selected vibe presets
   createdAt: string;
   updatedAt: string;
 }
@@ -95,7 +99,7 @@ export async function POST(request: NextRequest) {
     await ensureDir();
 
     const body = await request.json();
-    const { id, title, cells, structure, selectedProfileId } = body;
+    const { id, title, cells, structure, selectedProfileId, syntaxMode, stylerInstruction, vibeGuidance, vibeSelectedPresets } = body;
 
     if (!id || !title) {
       return NextResponse.json(
@@ -122,6 +126,10 @@ export async function POST(request: NextRequest) {
       cells: cells || [],
       structure,
       selectedProfileId: selectedProfileId ?? null,
+      syntaxMode: syntaxMode || 'plain',
+      stylerInstruction: stylerInstruction || '',
+      vibeGuidance: vibeGuidance || '',
+      vibeSelectedPresets: vibeSelectedPresets || [],
       createdAt,
       updatedAt: new Date().toISOString(),
     };

@@ -1389,23 +1389,62 @@ export default function EditorPage() {
     setShowNewDocModal(false);
   }, [newDocMode, pasteContent, newDocTitle]);
 
-  // Clean up cells: split, merge, and normalize whitespace
-  const handleCleanup = useCallback(() => {
-    if (!document || document.cells.length === 0) return;
+  // Clean up cells: AI-driven formatting, splitting, and merging
+  const [isCleaningUp, setIsCleaningUp] = useState(false);
+  const handleCleanup = useCallback(async () => {
+    if (!document || document.cells.length === 0 || isCleaningUp) return;
 
-    const currentContents = document.cells.map(c => c.content);
-    const cleaned = cleanupCells(currentContents, editorMode as SyntaxMode);
+    setIsCleaningUp(true);
+    try {
+      // Join all cells content
+      const content = document.cells.map(c => c.content).join('\n\n');
 
-    const newCells: Cell[] = cleaned.map((content, index) => ({
-      id: `cell-${Date.now()}-${index}`,
-      index,
-      content,
-    }));
+      // Call AI cleanup endpoint
+      const res = await fetch('/api/document/cleanup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content,
+          syntaxMode: editorMode,
+          model: selectedModel || undefined,
+        }),
+      });
 
-    setDocument(prev => prev ? { ...prev, cells: newCells } : null);
-    setSelectedCells(new Set());
-    setLastSelectedIndex(null);
-  }, [document, editorMode]);
+      if (!res.ok) {
+        throw new Error('Failed to clean up content');
+      }
+
+      const data = await res.json();
+      const sections = data.sections as string[];
+
+      if (sections && sections.length > 0) {
+        const newCells: Cell[] = sections.map((content, index) => ({
+          id: `cell-${Date.now()}-${index}`,
+          index,
+          content,
+        }));
+
+        setDocument(prev => prev ? { ...prev, cells: newCells } : null);
+        setSelectedCells(new Set());
+        setLastSelectedIndex(null);
+      }
+    } catch (error) {
+      console.error('Cleanup error:', error);
+      // Fallback to local cleanup
+      const currentContents = document.cells.map(c => c.content);
+      const cleaned = cleanupCells(currentContents, editorMode as SyntaxMode);
+      const newCells: Cell[] = cleaned.map((content, index) => ({
+        id: `cell-${Date.now()}-${index}`,
+        index,
+        content,
+      }));
+      setDocument(prev => prev ? { ...prev, cells: newCells } : null);
+      setSelectedCells(new Set());
+      setLastSelectedIndex(null);
+    } finally {
+      setIsCleaningUp(false);
+    }
+  }, [document, editorMode, selectedModel, isCleaningUp]);
 
   // Insert a new cell or heading at a specific position
   const handleInsertContent = useCallback((afterIndex: number | null, type: 'cell' | 'heading' = 'cell', content: string = '') => {
@@ -2965,13 +3004,21 @@ export default function EditorPage() {
                                 </button>
                                 <button
                                   onClick={handleCleanup}
-                                  className="flex-1 py-1.5 text-xs border border-[var(--border)] rounded-lg hover:bg-[var(--muted)] flex items-center justify-center gap-1.5"
-                                  title="Clean up: smart split, merge small cells, format whitespace"
+                                  disabled={isCleaningUp}
+                                  className="flex-1 py-1.5 text-xs border border-[var(--border)] rounded-lg hover:bg-[var(--muted)] disabled:opacity-50 flex items-center justify-center gap-1.5"
+                                  title="AI-powered cleanup: format, split, and merge intelligently"
                                 >
-                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
-                                  </svg>
-                                  Clean
+                                  {isCleaningUp ? (
+                                    <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                                    </svg>
+                                  ) : (
+                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+                                    </svg>
+                                  )}
+                                  {isCleaningUp ? 'Cleaning...' : 'Clean'}
                                 </button>
                               </div>
                             </div>

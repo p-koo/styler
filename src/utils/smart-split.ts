@@ -183,17 +183,25 @@ function splitLatex(content: string): string[] {
     // Check for paragraph break (blank line)
     if (trimmedLine === '') {
       // Only flush if we have substantive content (not just commands)
-      const cellContent = currentCell.join('\n').trim();
       const hasSubstantiveContent = currentCell.some(l => {
         const t = l.trim();
         return t && !t.startsWith('\\') && !t.startsWith('%');
       });
 
-      if (hasSubstantiveContent && cellContent) {
+      // Count consecutive blank lines - multiple blanks indicate stronger break
+      let blankCount = 1;
+      while (i + blankCount < lines.length && lines[i + blankCount].trim() === '') {
+        blankCount++;
+      }
+
+      if (hasSubstantiveContent) {
         flushCell();
-      } else if (currentCell.length > 0) {
-        // Keep accumulating if we only have commands
-        currentCell.push(line);
+        // Skip additional blank lines
+        i += blankCount - 1;
+      } else if (currentCell.length > 0 && blankCount >= 2) {
+        // Multiple blank lines - flush even if just commands
+        flushCell();
+        i += blankCount - 1;
       }
       continue;
     }
@@ -435,9 +443,65 @@ export function detectSyntaxMode(content: string): SyntaxMode {
 /**
  * Reorganize existing cells using smart logic
  * Takes an array of cell contents and reorganizes them
+ * Handles both splitting (large cells with multiple sections) and merging (tiny cells)
  */
 export function reorganizeCells(cells: string[], syntaxMode: SyntaxMode): string[] {
-  // Join all cells and re-split smartly
-  const fullContent = cells.join('\n\n');
-  return smartSplit(fullContent, { syntaxMode });
+  // For LaTeX, preserve single newlines since they have semantic meaning
+  // For other modes, use double newlines as paragraph separators
+  const separator = syntaxMode === 'latex' ? '\n' : '\n\n';
+
+  // Join all cells
+  const fullContent = cells.join(separator);
+
+  // Re-split using smart logic
+  let result = smartSplit(fullContent, { syntaxMode });
+
+  // Post-process: additional merging for very small cells
+  result = mergeRelatedCells(result, syntaxMode);
+
+  return result;
+}
+
+/**
+ * Merge cells that are too small to stand alone
+ * This handles cases where splitting was too aggressive
+ */
+function mergeRelatedCells(cells: string[], syntaxMode: SyntaxMode): string[] {
+  if (cells.length <= 1) return cells;
+
+  const result: string[] = [];
+
+  for (let i = 0; i < cells.length; i++) {
+    const cell = cells[i];
+    const trimmed = cell.trim();
+    const lineCount = trimmed.split('\n').length;
+    const wordCount = trimmed.split(/\s+/).length;
+
+    // Determine if this cell is "tiny" and should be merged
+    const isTinyCell = lineCount <= 2 && wordCount < 15;
+
+    // For LaTeX: check if it's just commands without content
+    const isLatexCommandsOnly = syntaxMode === 'latex' &&
+      trimmed.split('\n').every(line => {
+        const t = line.trim();
+        return !t || t.startsWith('\\') || t.startsWith('%');
+      });
+
+    // For Markdown: check if it's just a header without content
+    const isLonelyHeader = syntaxMode === 'markdown' &&
+      lineCount === 1 && trimmed.match(/^#{1,6}\s/);
+
+    if ((isTinyCell || isLatexCommandsOnly) && result.length > 0 && !isLonelyHeader) {
+      // Merge with previous cell
+      const separator = syntaxMode === 'latex' ? '\n\n' : '\n\n';
+      result[result.length - 1] = result[result.length - 1] + separator + cell;
+    } else if (isLonelyHeader && i + 1 < cells.length) {
+      // For lonely headers, merge with next cell
+      cells[i + 1] = cell + '\n\n' + cells[i + 1];
+    } else {
+      result.push(cell);
+    }
+  }
+
+  return result;
 }

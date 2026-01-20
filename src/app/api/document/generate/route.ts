@@ -6,7 +6,7 @@ import type { DocumentStructure } from '../analyze/route';
 
 interface DocumentContext {
   title: string;
-  existingParagraphs: string[];
+  existingCells: string[];
   structure?: DocumentStructure;
 }
 
@@ -73,25 +73,25 @@ export async function POST(request: NextRequest) {
       contextParts.push('');
 
       // Show where content will be inserted
-      if (documentContext.existingParagraphs.length > 0) {
+      if (documentContext.existingCells.length > 0) {
         if (insertAfterIndex !== null && insertAfterIndex !== undefined && insertAfterIndex >= 0) {
           // Show context around insertion point
           const start = Math.max(0, insertAfterIndex - 1);
-          const end = Math.min(documentContext.existingParagraphs.length, insertAfterIndex + 2);
+          const end = Math.min(documentContext.existingCells.length, insertAfterIndex + 2);
 
           contextParts.push('CONTEXT AROUND INSERTION POINT:');
           for (let i = start; i < end; i++) {
             const marker = i === insertAfterIndex ? '[INSERT NEW CONTENT AFTER THIS]' : '';
-            contextParts.push(`[Paragraph ${i + 1}]: ${documentContext.existingParagraphs[i]} ${marker}`);
+            contextParts.push(`[Paragraph ${i + 1}]: ${documentContext.existingCells[i]} ${marker}`);
           }
           contextParts.push('');
         } else {
           // Content will be added at the end
-          const lastParagraphs = documentContext.existingParagraphs.slice(-2);
-          if (lastParagraphs.length > 0) {
+          const lastCells = documentContext.existingCells.slice(-2);
+          if (lastCells.length > 0) {
             contextParts.push('LAST PARAGRAPHS (new content will follow these):');
-            lastParagraphs.forEach((p, i) => {
-              const idx = documentContext.existingParagraphs.length - lastParagraphs.length + i;
+            lastCells.forEach((p, i) => {
+              const idx = documentContext.existingCells.length - lastCells.length + i;
               contextParts.push(`[Paragraph ${idx + 1}]: ${p}`);
             });
             contextParts.push('');

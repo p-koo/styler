@@ -2,10 +2,10 @@
  * Document Store
  *
  * Manages full documents for context-aware editing.
- * Tracks paragraphs, definitions, acronyms, and edit history.
+ * Tracks cells, definitions, acronyms, and edit history.
  */
 
-export interface Paragraph {
+export interface Cell {
   id: string;
   index: number;
   content: string;
@@ -16,13 +16,13 @@ export interface Paragraph {
 export interface DocumentDefinition {
   term: string;
   definition: string;
-  firstMentionParagraph: number;
+  firstMentionCell: number;
 }
 
 export interface Document {
   id: string;
   title: string;
-  paragraphs: Paragraph[];
+  cells: Cell[];
   definitions: DocumentDefinition[];
   acronyms: Map<string, string>; // e.g., "ML" -> "Machine Learning"
   createdAt: Date;
@@ -40,9 +40,9 @@ function generateId(): string {
 }
 
 /**
- * Parse text into paragraphs
+ * Parse text into cells
  */
-export function parseTextIntoParagraphs(text: string): string[] {
+export function parseTextIntoCells(text: string): string[] {
   // Split by double newlines or single newlines followed by indentation
   return text
     .split(/\n\s*\n/)
@@ -78,7 +78,7 @@ export function extractAcronyms(text: string): Map<string, string> {
  * Looks for patterns like "X is defined as Y" or "We define X as Y"
  */
 export function extractDefinitions(
-  paragraphs: Paragraph[]
+  cells: Cell[]
 ): DocumentDefinition[] {
   const definitions: DocumentDefinition[] = [];
 
@@ -88,14 +88,14 @@ export function extractDefinitions(
     /["']?([^"']+?)["']?\s+refers\s+to\s+["']?([^"'.]+)/gi,
   ];
 
-  for (const para of paragraphs) {
+  for (const para of cells) {
     for (const pattern of patterns) {
       let match;
       while ((match = pattern.exec(para.content)) !== null) {
         definitions.push({
           term: match[1].trim(),
           definition: match[2].trim(),
-          firstMentionParagraph: para.index,
+          firstMentionCell: para.index,
         });
       }
     }
@@ -108,20 +108,20 @@ export function extractDefinitions(
  * Create a new document from text
  */
 export function createDocument(text: string, title?: string): Document {
-  const paragraphTexts = parseTextIntoParagraphs(text);
-  const paragraphs: Paragraph[] = paragraphTexts.map((content, index) => ({
+  const cellTexts = parseTextIntoCells(text);
+  const cells: Cell[] = cellTexts.map((content, index) => ({
     id: `para-${index}`,
     index,
     content,
   }));
 
   const acronyms = extractAcronyms(text);
-  const definitions = extractDefinitions(paragraphs);
+  const definitions = extractDefinitions(cells);
 
   const doc: Document = {
     id: generateId(),
     title: title || 'Untitled Document',
-    paragraphs,
+    cells,
     definitions,
     acronyms,
     createdAt: new Date(),
@@ -141,35 +141,35 @@ export function getDocument(id: string): Document | undefined {
 
 /**
  * Get context for a specific paragraph
- * Returns surrounding paragraphs, relevant definitions, and acronyms
+ * Returns surrounding cells, relevant definitions, and acronyms
  */
-export function getParagraphContext(
+export function getCellContext(
   docId: string,
-  paragraphIndex: number,
+  cellIndex: number,
   contextSize: number = 2
 ): {
-  before: Paragraph[];
-  current: Paragraph;
-  after: Paragraph[];
+  before: Cell[];
+  current: Cell;
+  after: Cell[];
   relevantDefinitions: DocumentDefinition[];
   relevantAcronyms: Map<string, string>;
 } | null {
   const doc = documents.get(docId);
   if (!doc) return null;
 
-  const current = doc.paragraphs[paragraphIndex];
+  const current = doc.cells[cellIndex];
   if (!current) return null;
 
-  // Get surrounding paragraphs
-  const startBefore = Math.max(0, paragraphIndex - contextSize);
-  const endAfter = Math.min(doc.paragraphs.length, paragraphIndex + contextSize + 1);
+  // Get surrounding cells
+  const startBefore = Math.max(0, cellIndex - contextSize);
+  const endAfter = Math.min(doc.cells.length, cellIndex + contextSize + 1);
 
-  const before = doc.paragraphs.slice(startBefore, paragraphIndex);
-  const after = doc.paragraphs.slice(paragraphIndex + 1, endAfter);
+  const before = doc.cells.slice(startBefore, cellIndex);
+  const after = doc.cells.slice(cellIndex + 1, endAfter);
 
   // Find relevant definitions (defined before or in current paragraph)
   const relevantDefinitions = doc.definitions.filter(
-    (d) => d.firstMentionParagraph <= paragraphIndex
+    (d) => d.firstMentionCell <= cellIndex
   );
 
   // Find acronyms used in current paragraph
@@ -192,15 +192,15 @@ export function getParagraphContext(
 /**
  * Update a paragraph with suggested edit
  */
-export function updateParagraphEdit(
+export function updateCellEdit(
   docId: string,
-  paragraphIndex: number,
+  cellIndex: number,
   editedContent: string
 ): Document | null {
   const doc = documents.get(docId);
   if (!doc) return null;
 
-  const para = doc.paragraphs[paragraphIndex];
+  const para = doc.cells[cellIndex];
   if (!para) return null;
 
   para.edited = editedContent;
@@ -215,13 +215,13 @@ export function updateParagraphEdit(
  */
 export function resolveEdit(
   docId: string,
-  paragraphIndex: number,
+  cellIndex: number,
   accept: boolean
 ): Document | null {
   const doc = documents.get(docId);
   if (!doc) return null;
 
-  const para = doc.paragraphs[paragraphIndex];
+  const para = doc.cells[cellIndex];
   if (!para || !para.edited) return null;
 
   if (accept) {
@@ -241,7 +241,7 @@ export function exportDocumentAsText(docId: string): string | null {
   const doc = documents.get(docId);
   if (!doc) return null;
 
-  return doc.paragraphs.map((p) => p.content).join('\n\n');
+  return doc.cells.map((p) => p.content).join('\n\n');
 }
 
 /**
@@ -263,9 +263,9 @@ export function deleteDocument(id: string): boolean {
  */
 export function buildContextPrompt(
   docId: string,
-  paragraphIndex: number
+  cellIndex: number
 ): string | null {
-  const context = getParagraphContext(docId, paragraphIndex);
+  const context = getCellContext(docId, cellIndex);
   if (!context) return null;
 
   const parts: string[] = [];
@@ -292,7 +292,7 @@ export function buildContextPrompt(
   if (context.before.length > 0) {
     parts.push('PRECEDING PARAGRAPHS (for context):');
     for (const para of context.before) {
-      parts.push(`[Paragraph ${para.index + 1}]: ${para.content}`);
+      parts.push(`[Cell ${para.index + 1}]: ${para.content}`);
     }
     parts.push('');
   }
@@ -306,7 +306,7 @@ export function buildContextPrompt(
   if (context.after.length > 0) {
     parts.push('FOLLOWING PARAGRAPHS (for context):');
     for (const para of context.after) {
-      parts.push(`[Paragraph ${para.index + 1}]: ${para.content}`);
+      parts.push(`[Cell ${para.index + 1}]: ${para.content}`);
     }
     parts.push('');
   }

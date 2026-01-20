@@ -7,9 +7,9 @@ import type { DocumentStructure } from '../analyze/route';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { paragraphs, paragraphIndex, instruction, profileId, documentStructure, model, documentId } = body as {
-      paragraphs: string[];
-      paragraphIndex: number;
+    const { cells, cellIndex, instruction, profileId, documentStructure, model, documentId } = body as {
+      cells: string[];
+      cellIndex: number;
       instruction?: string;
       profileId?: string;
       documentStructure?: DocumentStructure;
@@ -17,17 +17,17 @@ export async function POST(request: NextRequest) {
       documentId?: string;
     };
 
-    if (!paragraphs || typeof paragraphIndex !== 'number') {
+    if (!cells || typeof cellIndex !== 'number') {
       return NextResponse.json(
-        { error: 'paragraphs array and paragraphIndex are required' },
+        { error: 'cells array and cellIndex are required' },
         { status: 400 }
       );
     }
 
-    const currentParagraph = paragraphs[paragraphIndex];
-    if (!currentParagraph) {
+    const currentCell = cells[cellIndex];
+    if (!currentCell) {
       return NextResponse.json(
-        { error: 'Invalid paragraph index' },
+        { error: 'Invalid cell index' },
         { status: 400 }
       );
     }
@@ -50,8 +50,8 @@ export async function POST(request: NextRequest) {
 
     // Use the orchestrator to generate the edit
     const result = await orchestrateEdit({
-      paragraphs,
-      paragraphIndex,
+      cells,
+      cellIndex,
       instruction,
       profileId,
       documentId,
@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       editedText: finalEditedText,
       originalText: result.originalText,
-      paragraphIndex: result.paragraphIndex,
+      cellIndex: result.cellIndex,
       critique: genAlphaApplied ? {
         alignmentScore: 0.69,
         predictedAcceptance: 0.42,

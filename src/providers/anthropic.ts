@@ -28,6 +28,11 @@ export class AnthropicProvider extends LLMProvider {
       (m) => m.role !== 'system'
     );
 
+    // Log prompt size for debugging
+    const systemLength = systemMessage?.content?.length || 0;
+    const messagesLength = nonSystemMessages.reduce((sum, m) => sum + m.content.length, 0);
+    console.log(`[Anthropic] Request - system: ${systemLength} chars, messages: ${messagesLength} chars, total: ${systemLength + messagesLength} chars`);
+
     const response = await this.client.messages.create({
       model: this.config.model,
       max_tokens: options.maxTokens || this.config.maxTokens || 4096,
@@ -39,7 +44,15 @@ export class AnthropicProvider extends LLMProvider {
       stop_sequences: options.stopSequences,
     });
 
+    // Log response details
+    console.log(`[Anthropic] Response - stop_reason: ${response.stop_reason}, content blocks: ${response.content.length}`);
+    console.log(`[Anthropic] Usage - input: ${response.usage.input_tokens}, output: ${response.usage.output_tokens}`);
+
     const textContent = response.content.find((c) => c.type === 'text');
+
+    if (!textContent || textContent.type !== 'text' || !textContent.text) {
+      console.warn('[Anthropic] No text content in response:', JSON.stringify(response.content));
+    }
 
     return {
       content: textContent?.type === 'text' ? textContent.text : '',

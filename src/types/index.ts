@@ -257,7 +257,7 @@ export interface CritiqueAnalysis {
 // Record of a user's edit decision (accept/reject/partial)
 export interface EditDecision {
   id: string;
-  paragraphIndex: number;
+  cellIndex: number;
   originalText: string;
   suggestedEdit: string;
   finalText: string;                // What user actually accepted (may be partial)
@@ -308,11 +308,11 @@ export interface DocumentPreferences {
 export interface SavedDocumentWithPreferences {
   id: string;
   title: string;
-  paragraphs: Array<{
+  cells: Array<{
     id: string;
     index: number;
     content: string;
-    type?: 'paragraph' | 'heading';
+    type?: 'cell' | 'heading';
   }>;
   structure?: {
     title: string;
@@ -321,8 +321,8 @@ export interface SavedDocumentWithPreferences {
       id: string;
       name: string;
       type: string;
-      startParagraph: number;
-      endParagraph: number;
+      startCell: number;
+      endCell: number;
       purpose: string;
     }>;
     keyTerms: string[];

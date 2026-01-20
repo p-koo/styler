@@ -20,8 +20,8 @@ const sectionGuidance: Record<DocumentSection['type'], string> = {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { paragraphs, selectedIndices, instruction, profileId, documentStructure, model } = body as {
-      paragraphs: string[];
+    const { cells, selectedIndices, instruction, profileId, documentStructure, model } = body as {
+      cells: string[];
       selectedIndices: number[];
       instruction?: string;
       profileId?: string;
@@ -29,28 +29,57 @@ export async function POST(request: NextRequest) {
       model?: string;
     };
 
-    if (!paragraphs || !selectedIndices || selectedIndices.length < 2) {
+    if (!cells || !selectedIndices || selectedIndices.length < 2) {
       return NextResponse.json(
-        { error: 'paragraphs array and at least 2 selectedIndices are required' },
+        { error: 'cells array and at least 2 selectedIndices are required' },
         { status: 400 }
       );
     }
 
-    // Get the selected paragraphs
-    const selectedParagraphs = selectedIndices.map((i) => paragraphs[i]).filter(Boolean);
-    if (selectedParagraphs.length !== selectedIndices.length) {
+    // Get the selected cells
+    const selectedCells = selectedIndices.map((i) => cells[i]).filter(Boolean);
+    if (selectedCells.length !== selectedIndices.length) {
       return NextResponse.json(
-        { error: 'Invalid paragraph indices' },
+        { error: 'Invalid cell indices' },
         { status: 400 }
       );
     }
 
-    // Find which sections these paragraphs belong to
+    // Detect if this is an "add" instruction early (for content limiting)
+    const instructionLower = (instruction || '').toLowerCase();
+    const isAddInstruction = /\b(add|insert|prepend|include|create|write|generate)\s+(an?\s+)?(abstract|introduction|conclusion|section|paragraph|summary|title|header)/i.test(instructionLower);
+
+    // Check total content size - limit for non-add instructions
+    const totalContentLength = selectedCells.join(' ').length;
+    const MAX_CONTENT_LENGTH = 15000; // ~4000 tokens rough estimate
+
+    console.log(`[Batch Edit API] Selected ${selectedIndices.length} cells, total content: ${totalContentLength} chars, isAdd: ${isAddInstruction}`);
+
+    // For "add" instructions with large content, we'll sample content instead of sending everything
+    let cellsToProcess = selectedCells;
+    let sampledForAdd = false;
+
+    if (isAddInstruction && totalContentLength > MAX_CONTENT_LENGTH) {
+      // For add instructions, sample first few and last few cells to understand the document
+      const sampleSize = 3;
+      const firstCells = selectedCells.slice(0, sampleSize);
+      const lastCells = selectedCells.slice(-sampleSize);
+      cellsToProcess = [...new Set([...firstCells, ...lastCells])]; // Dedupe if overlap
+      sampledForAdd = true;
+      console.log(`[Batch Edit API] Sampling ${cellsToProcess.length} cells for add instruction`);
+    } else if (!isAddInstruction && totalContentLength > MAX_CONTENT_LENGTH) {
+      return NextResponse.json(
+        { error: `Selection is too large (${selectedIndices.length} cells, ${Math.round(totalContentLength/1000)}k chars). Please select fewer cells or use "Selection" scope with a smaller selection.` },
+        { status: 400 }
+      );
+    }
+
+    // Find which sections these cells belong to
     const sections: DocumentSection[] = [];
     if (documentStructure?.sections) {
       for (const idx of selectedIndices) {
         const section = documentStructure.sections.find(
-          (s) => idx >= s.startParagraph && idx <= s.endParagraph
+          (s) => idx >= s.startCell && idx <= s.endCell
         );
         if (section && !sections.find((s) => s.id === section.id)) {
           sections.push(section);
@@ -58,18 +87,18 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Build context from surrounding paragraphs (before first and after last selected)
+    // Build context from surrounding cells (before first and after last selected)
     const firstIdx = Math.min(...selectedIndices);
     const lastIdx = Math.max(...selectedIndices);
     const contextSize = 2;
 
-    const beforeParagraphs = paragraphs.slice(
+    const beforeCells = cells.slice(
       Math.max(0, firstIdx - contextSize),
       firstIdx
     );
-    const afterParagraphs = paragraphs.slice(
+    const afterCells = cells.slice(
       lastIdx + 1,
-      Math.min(paragraphs.length, lastIdx + 1 + contextSize)
+      Math.min(cells.length, lastIdx + 1 + contextSize)
     );
 
     // Use key terms from structure
@@ -88,16 +117,39 @@ export async function POST(request: NextRequest) {
     // Build the context-aware prompt
     const contextParts: string[] = [];
 
+    // isAddInstruction was already detected above
+    console.log('[Batch Edit API] Instruction:', instruction);
+    console.log('[Batch Edit API] Is add instruction:', isAddInstruction);
+    console.log('[Batch Edit API] Sampled for add:', sampledForAdd);
+
     contextParts.push(stylePrompt);
     contextParts.push('');
     contextParts.push('---');
     contextParts.push('');
-    contextParts.push('You are editing MULTIPLE PARAGRAPHS within a larger document. You may:');
-    contextParts.push('- Restructure the content for better flow');
-    contextParts.push('- Merge paragraphs if they cover the same idea');
-    contextParts.push('- Split paragraphs if they contain multiple distinct ideas');
-    contextParts.push('- Reorder content within the selected paragraphs');
-    contextParts.push('- Improve transitions between paragraphs');
+
+    if (isAddInstruction && sampledForAdd) {
+      // For large documents, we're only generating new content based on a sample
+      contextParts.push('You are GENERATING NEW CONTENT (like an abstract or title) for a document.');
+      contextParts.push('Based on the sample paragraphs below, create the requested content.');
+      contextParts.push('- Generate ONLY the new content (abstract, title, etc.)');
+      contextParts.push('- Do NOT include or repeat the existing paragraphs');
+      contextParts.push('- Base your generation on the document context and sample content provided');
+    } else if (isAddInstruction) {
+      contextParts.push('You are ADDING NEW CONTENT to an existing document.');
+      contextParts.push('IMPORTANT: You MUST preserve ALL existing paragraphs and ADD the new content.');
+      contextParts.push('- Keep all existing paragraphs intact');
+      contextParts.push('- Add the requested new content in the appropriate position');
+      contextParts.push('- For abstracts/introductions: add at the BEGINNING');
+      contextParts.push('- For conclusions/summaries: add at the END');
+      contextParts.push('- Do NOT delete, remove, or significantly alter existing content');
+    } else {
+      contextParts.push('You are editing MULTIPLE PARAGRAPHS within a larger document. You may:');
+      contextParts.push('- Restructure the content for better flow');
+      contextParts.push('- Merge cells if they cover the same idea');
+      contextParts.push('- Split cells if they contain multiple distinct ideas');
+      contextParts.push('- Reorder content within the selected cells');
+      contextParts.push('- Improve transitions between cells');
+    }
     contextParts.push('');
 
     // Add document-level context if available
@@ -125,23 +177,30 @@ export async function POST(request: NextRequest) {
       contextParts.push('');
     }
 
-    if (beforeParagraphs.length > 0) {
+    if (beforeCells.length > 0) {
       contextParts.push('PRECEDING PARAGRAPHS (for context, do not edit):');
-      beforeParagraphs.forEach((p, i) => {
-        contextParts.push(`[Paragraph ${firstIdx - beforeParagraphs.length + i + 1}]: ${p}`);
+      beforeCells.forEach((p, i) => {
+        contextParts.push(`[Paragraph ${firstIdx - beforeCells.length + i + 1}]: ${p}`);
       });
       contextParts.push('');
     }
 
-    contextParts.push('PARAGRAPHS TO EDIT (you may restructure, merge, or split these):');
-    selectedParagraphs.forEach((p, i) => {
-      contextParts.push(`[Paragraph ${selectedIndices[i] + 1}]: ${p}`);
-    });
+    if (sampledForAdd) {
+      contextParts.push('SAMPLE PARAGRAPHS FROM DOCUMENT (for context to generate new content):');
+      cellsToProcess.forEach((p, i) => {
+        contextParts.push(`[Sample ${i + 1}]: ${p}`);
+      });
+    } else {
+      contextParts.push('PARAGRAPHS TO EDIT (you may restructure, merge, or split these):');
+      selectedCells.forEach((p, i) => {
+        contextParts.push(`[Paragraph ${selectedIndices[i] + 1}]: ${p}`);
+      });
+    }
     contextParts.push('');
 
-    if (afterParagraphs.length > 0) {
+    if (afterCells.length > 0) {
       contextParts.push('FOLLOWING PARAGRAPHS (for context, do not edit):');
-      afterParagraphs.forEach((p, i) => {
+      afterCells.forEach((p, i) => {
         contextParts.push(`[Paragraph ${lastIdx + 2 + i}]: ${p}`);
       });
       contextParts.push('');
@@ -149,18 +208,46 @@ export async function POST(request: NextRequest) {
 
     contextParts.push('---');
     contextParts.push('');
-    contextParts.push(`EDIT INSTRUCTION: ${instruction || 'Improve and restructure these paragraphs for better flow and clarity.'}`);
+    contextParts.push(`INSTRUCTION: ${instruction || 'Improve and restructure these cells for better flow and clarity.'}`);
     contextParts.push('');
-    contextParts.push('CRITICAL FORMATTING REQUIREMENT:');
-    contextParts.push('- Return ONLY the edited text');
-    contextParts.push('- You MUST separate each paragraph with the marker: <<<PARAGRAPH_BREAK>>>');
-    contextParts.push('- Do NOT include paragraph numbers, explanations, or commentary');
-    contextParts.push('- Example output format:');
-    contextParts.push('First paragraph text here.');
-    contextParts.push('<<<PARAGRAPH_BREAK>>>');
-    contextParts.push('Second paragraph text here.');
-    contextParts.push('<<<PARAGRAPH_BREAK>>>');
-    contextParts.push('Third paragraph text here.');
+
+    if (sampledForAdd) {
+      // For sampled add, we only want the new content
+      contextParts.push('IMPORTANT: Generate ONLY the new content requested (e.g., the abstract and/or title).');
+      contextParts.push('Do NOT include the sample paragraphs in your output.');
+      contextParts.push('');
+      contextParts.push('FORMATTING:');
+      contextParts.push('- Return ONLY the new content');
+      contextParts.push('- If generating multiple items (e.g., title AND abstract), separate them with: <<<PARAGRAPH_BREAK>>>');
+      contextParts.push('- Do NOT include labels like "Title:" or "Abstract:" - just the content itself');
+    } else if (isAddInstruction) {
+      contextParts.push('REMINDER: You are ADDING content. Your output MUST include:');
+      contextParts.push('1. The NEW content you are adding (abstract, introduction, etc.)');
+      contextParts.push('2. ALL of the original paragraphs (possibly with minor improvements)');
+      contextParts.push('Do NOT omit any existing paragraphs!');
+      contextParts.push('');
+      contextParts.push('CRITICAL FORMATTING REQUIREMENT:');
+      contextParts.push('- Return ONLY the text content');
+      contextParts.push('- You MUST separate each paragraph with the marker: <<<PARAGRAPH_BREAK>>>');
+      contextParts.push('- Do NOT include paragraph numbers, explanations, or commentary');
+      contextParts.push('- Example output format:');
+      contextParts.push('First paragraph text here.');
+      contextParts.push('<<<PARAGRAPH_BREAK>>>');
+      contextParts.push('Second paragraph text here.');
+      contextParts.push('<<<PARAGRAPH_BREAK>>>');
+      contextParts.push('Third paragraph text here.');
+    } else {
+      contextParts.push('CRITICAL FORMATTING REQUIREMENT:');
+      contextParts.push('- Return ONLY the text content');
+      contextParts.push('- You MUST separate each paragraph with the marker: <<<PARAGRAPH_BREAK>>>');
+      contextParts.push('- Do NOT include paragraph numbers, explanations, or commentary');
+      contextParts.push('- Example output format:');
+      contextParts.push('First paragraph text here.');
+      contextParts.push('<<<PARAGRAPH_BREAK>>>');
+      contextParts.push('Second paragraph text here.');
+      contextParts.push('<<<PARAGRAPH_BREAK>>>');
+      contextParts.push('Third paragraph text here.');
+    }
 
     const systemPrompt = contextParts.join('\n');
 
@@ -171,7 +258,7 @@ export async function POST(request: NextRequest) {
     const result = await provider.complete({
       messages: [
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: 'Please edit and restructure the paragraphs now.' },
+        { role: 'user', content: 'Please edit and restructure the cells now.' },
       ],
       temperature: 0.4, // Slightly higher for creative restructuring
     });
@@ -179,12 +266,15 @@ export async function POST(request: NextRequest) {
     // Clean up the response
     let editedText = result.content.trim();
 
+    console.log('[Batch Edit API] Raw LLM response length:', result.content?.length);
+    console.log('[Batch Edit API] Raw LLM response preview:', result.content?.slice(0, 500));
+
     // Remove common prefixes the LLM might add
     const prefixesToRemove = [
-      /^here'?s?\s+(the\s+)?edited\s+(paragraphs?|version|text):?\s*/i,
-      /^edited\s+(paragraphs?|version|text):?\s*/i,
-      /^the\s+edited\s+(paragraphs?|version|text):?\s*/i,
-      /^restructured\s+(paragraphs?|version|text):?\s*/i,
+      /^here'?s?\s+(the\s+)?edited\s+(cells?|version|text):?\s*/i,
+      /^edited\s+(cells?|version|text):?\s*/i,
+      /^the\s+edited\s+(cells?|version|text):?\s*/i,
+      /^restructured\s+(cells?|version|text):?\s*/i,
     ];
 
     for (const prefix of prefixesToRemove) {
@@ -209,8 +299,9 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       editedText,
-      originalParagraphs: selectedParagraphs,
+      originalCells: selectedCells,
       selectedIndices,
+      isAddOnly: sampledForAdd, // If true, editedText contains only NEW content to prepend
     });
   } catch (error) {
     console.error('Batch edit error:', error);

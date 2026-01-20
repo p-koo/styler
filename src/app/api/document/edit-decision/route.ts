@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const {
       documentId,
-      paragraphIndex,
+      cellIndex,
       originalText,
       suggestedEdit,
       finalText,
@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
       model,
     } = body as {
       documentId: string;
-      paragraphIndex: number;
+      cellIndex: number;
       originalText: string;
       suggestedEdit: string;
       finalText: string;
@@ -40,9 +40,9 @@ export async function POST(request: NextRequest) {
     };
 
     // Validate required fields
-    if (!documentId || typeof paragraphIndex !== 'number' || !decision) {
+    if (!documentId || typeof cellIndex !== 'number' || !decision) {
       return NextResponse.json(
-        { error: 'documentId, paragraphIndex, and decision are required' },
+        { error: 'documentId, cellIndex, and decision are required' },
         { status: 400 }
       );
     }
@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
     // Create the edit decision record
     const editDecision: EditDecision = {
       id: `decision-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-      paragraphIndex,
+      cellIndex,
       originalText: originalText || '',
       suggestedEdit: suggestedEdit || '',
       finalText: finalText || '',

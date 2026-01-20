@@ -10,7 +10,7 @@ export interface DocumentSnapshot {
   timestamp: string;
   documentId: string;
   documentTitle: string;
-  paragraphs: Array<{
+  cells: Array<{
     id: string;
     index: number;
     content: string;
@@ -55,7 +55,7 @@ export function getDocumentHistory(documentId: string): DocumentHistory {
 export function saveSnapshot(
   documentId: string,
   documentTitle: string,
-  paragraphs: Array<{ id: string; index: number; content: string }>,
+  cells: Array<{ id: string; index: number; content: string }>,
   changeDescription: string
 ): DocumentSnapshot {
   const history = getDocumentHistory(documentId);
@@ -65,7 +65,7 @@ export function saveSnapshot(
     timestamp: new Date().toISOString(),
     documentId,
     documentTitle,
-    paragraphs: paragraphs.map((p) => ({
+    cells: cells.map((p) => ({
       id: p.id,
       index: p.index,
       content: p.content,

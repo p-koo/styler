@@ -7,7 +7,7 @@ interface FeedbackItem {
   title: string;
   description: string;
   location?: {
-    paragraphIndices: number[];
+    cellIndices: number[];
     excerpt?: string;
   };
   priority: 'high' | 'medium' | 'low';
@@ -24,35 +24,35 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const {
-      paragraphs,        // Full document paragraphs
-      selectedIndices,   // Optional: specific paragraphs to analyze
+      cells,        // Full document cells
+      selectedIndices,   // Optional: specific cells to analyze
       documentStructure, // Optional: document structure info
       focusAreas,        // Optional: specific aspects to focus on
       goals,             // Optional: user's goals for the document/section
       model,
     } = body;
 
-    if (!paragraphs || !Array.isArray(paragraphs) || paragraphs.length === 0) {
+    if (!cells || !Array.isArray(cells) || cells.length === 0) {
       return NextResponse.json(
-        { error: 'paragraphs array is required' },
+        { error: 'cells array is required' },
         { status: 400 }
       );
     }
 
     // Determine scope
-    const isSection = selectedIndices && selectedIndices.length > 0 && selectedIndices.length < paragraphs.length;
+    const isSection = selectedIndices && selectedIndices.length > 0 && selectedIndices.length < cells.length;
     const indicesToAnalyze = isSection
       ? selectedIndices
-      : paragraphs.map((_: unknown, i: number) => i);
+      : cells.map((_: unknown, i: number) => i);
 
     // Format full document for context
-    const fullDocumentContext = paragraphs
+    const fullDocumentContext = cells
       .map((p: string, i: number) => `[${i}] ${p}`)
       .join('\n\n');
 
     // Format section if applicable
     const sectionText = isSection
-      ? indicesToAnalyze.map((i: number) => `[${i}] ${paragraphs[i]}`).join('\n\n')
+      ? indicesToAnalyze.map((i: number) => `[${i}] ${cells[i]}`).join('\n\n')
       : fullDocumentContext;
 
     // Build the prompt
@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
 ${isSection ? `FULL DOCUMENT CONTEXT (for understanding how this section fits):
 ${fullDocumentContext.slice(0, 4000)}${fullDocumentContext.length > 4000 ? '\n...[truncated]' : ''}
 
-SECTION TO REVIEW (paragraphs ${indicesToAnalyze.join(', ')}):
+SECTION TO REVIEW (cells ${indicesToAnalyze.join(', ')}):
 ${sectionText}` : `DOCUMENT TO REVIEW:
 ${fullDocumentContext}`}
 
@@ -88,7 +88,7 @@ Provide comprehensive, actionable feedback as JSON:
       "title": "Brief descriptive title (5-8 words)",
       "description": "Detailed explanation with specific, actionable advice. Be concrete about what to change and why.",
       "location": {
-        "paragraphIndices": [<affected paragraph numbers from the brackets>],
+        "cellIndices": [<affected paragraph numbers from the brackets>],
         "excerpt": "brief relevant quote if helpful"
       },
       "priority": "high" | "medium" | "low"
@@ -150,7 +150,7 @@ FEEDBACK GUIDELINES:
       success: true,
       review,
       scope: isSection ? 'section' : 'document',
-      analyzedParagraphs: indicesToAnalyze,
+      analyzedCells: indicesToAnalyze,
     });
   } catch (error) {
     console.error('Review generation error:', error);

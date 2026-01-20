@@ -41,7 +41,7 @@ const CONFIG = {
 export interface OrchestrationResult {
   editedText: string;
   originalText: string;
-  paragraphIndex: number;
+  cellIndex: number;
   critique: CritiqueAnalysis;
   iterations: number;
   documentPreferences: DocumentPreferences;
@@ -53,8 +53,8 @@ export interface OrchestrationResult {
 }
 
 export interface OrchestrationRequest {
-  paragraphs: string[];
-  paragraphIndex: number;
+  cells: string[];
+  cellIndex: number;
   instruction?: string;
   profileId?: string;
   documentId: string;
@@ -65,8 +65,8 @@ export interface OrchestrationRequest {
       id: string;
       name: string;
       type: string;
-      startParagraph: number;
-      endParagraph: number;
+      startCell: number;
+      endCell: number;
       purpose: string;
     }>;
     keyTerms: string[];
@@ -84,8 +84,8 @@ export async function orchestrateEdit(
   request: OrchestrationRequest
 ): Promise<OrchestrationResult> {
   const {
-    paragraphs,
-    paragraphIndex,
+    cells,
+    cellIndex,
     instruction,
     documentId,
     documentStructure,
@@ -94,7 +94,7 @@ export async function orchestrateEdit(
     audienceProfile,
   } = request;
 
-  const currentParagraph = paragraphs[paragraphIndex];
+  const currentCell = cells[cellIndex];
 
   // Get or create document preferences
   let documentPrefs = await getOrCreateDocumentPreferences(
@@ -103,7 +103,7 @@ export async function orchestrateEdit(
   );
 
   const convergenceHistory: OrchestrationResult['convergenceHistory'] = [];
-  let bestEdit = currentParagraph;
+  let bestEdit = currentCell;
   let bestCritique: CritiqueAnalysis = {
     alignmentScore: 0,
     predictedAcceptance: 0,
@@ -116,7 +116,7 @@ export async function orchestrateEdit(
   let currentSection: NonNullable<OrchestrationRequest['documentStructure']>['sections'][0] | undefined;
   if (documentStructure?.sections) {
     currentSection = documentStructure.sections.find(
-      (s) => paragraphIndex >= s.startParagraph && paragraphIndex <= s.endParagraph
+      (s) => cellIndex >= s.startCell && cellIndex <= s.endCell
     );
   }
 
@@ -129,8 +129,8 @@ export async function orchestrateEdit(
 
     // Generate edit with current preferences
     const editedText = await generateEdit({
-      paragraphs,
-      paragraphIndex,
+      cells,
+      cellIndex,
       instruction,
       documentStructure,
       model,
@@ -143,7 +143,7 @@ export async function orchestrateEdit(
 
     // Critique the edit
     const critique = await critiqueEdit({
-      originalText: currentParagraph,
+      originalText: currentCell,
       suggestedEdit: editedText,
       baseStyle: adjustedStyle,
       audienceProfile,
@@ -214,8 +214,8 @@ export async function orchestrateEdit(
 
   return {
     editedText: bestEdit,
-    originalText: currentParagraph,
-    paragraphIndex,
+    originalText: currentCell,
+    cellIndex,
     critique: bestCritique,
     iterations,
     documentPreferences: documentPrefs,
@@ -227,8 +227,8 @@ export async function orchestrateEdit(
  * Generate an edit using the LLM
  */
 async function generateEdit(params: {
-  paragraphs: string[];
-  paragraphIndex: number;
+  cells: string[];
+  cellIndex: number;
   instruction?: string;
   documentStructure?: OrchestrationRequest['documentStructure'];
   model?: string;
@@ -239,8 +239,8 @@ async function generateEdit(params: {
   previousIssues?: CritiqueIssue[];
 }): Promise<string> {
   const {
-    paragraphs,
-    paragraphIndex,
+    cells,
+    cellIndex,
     instruction,
     documentStructure,
     model,
@@ -251,22 +251,28 @@ async function generateEdit(params: {
     previousIssues,
   } = params;
 
-  const currentParagraph = paragraphs[paragraphIndex];
+  const currentCell = cells[cellIndex];
 
   // Find current section
   let currentSection: NonNullable<OrchestrationRequest['documentStructure']>['sections'][0] | undefined;
   if (documentStructure?.sections) {
     currentSection = documentStructure.sections.find(
-      (s) => paragraphIndex >= s.startParagraph && paragraphIndex <= s.endParagraph
+      (s) => cellIndex >= s.startCell && cellIndex <= s.endCell
     );
   }
 
-  // Build context from surrounding paragraphs
+  // Build context from surrounding cells
   const contextSize = 2;
-  const startBefore = Math.max(0, paragraphIndex - contextSize);
-  const endAfter = Math.min(paragraphs.length, paragraphIndex + contextSize + 1);
-  const beforeParagraphs = paragraphs.slice(startBefore, paragraphIndex);
-  const afterParagraphs = paragraphs.slice(paragraphIndex + 1, endAfter);
+  const startBefore = Math.max(0, cellIndex - contextSize);
+  const endAfter = Math.min(cells.length, cellIndex + contextSize + 1);
+  const beforeCells = cells.slice(startBefore, cellIndex);
+  const afterCells = cells.slice(cellIndex + 1, endAfter);
+
+  // Detect if this is a generation/expansion request vs a pure edit
+  const instructionLower = (instruction || '').toLowerCase();
+  const isGenerationRequest =
+    /\b(generate|write|create|add|draft|compose|introduce|expand|elaborate)\b/.test(instructionLower) ||
+    /\b(abstract|introduction|conclusion|summary|section|paragraph)\b/.test(instructionLower);
 
   // Build style prompt
   const stylePrompt = buildSystemPrompt(baseStyle, audienceProfile);
@@ -277,7 +283,13 @@ async function generateEdit(params: {
   contextParts.push('');
   contextParts.push('---');
   contextParts.push('');
-  contextParts.push('You are editing a specific paragraph within a larger document.');
+
+  if (isGenerationRequest) {
+    contextParts.push('You are working on a document and may need to generate new content, expand existing content, or make significant changes based on the instruction.');
+    contextParts.push('You are NOT limited to just editing the existing text - you can rewrite, expand, or generate entirely new content as the instruction requires.');
+  } else {
+    contextParts.push('You are editing a specific paragraph within a larger document.');
+  }
   contextParts.push('');
 
   // Add document-level context
@@ -312,22 +324,22 @@ async function generateEdit(params: {
   }
 
   // Add surrounding context
-  if (beforeParagraphs.length > 0) {
+  if (beforeCells.length > 0) {
     contextParts.push('PRECEDING PARAGRAPHS (for context, do not edit):');
-    beforeParagraphs.forEach((p, i) => {
+    beforeCells.forEach((p, i) => {
       contextParts.push(`[Paragraph ${startBefore + i + 1}]: ${p}`);
     });
     contextParts.push('');
   }
 
   contextParts.push('PARAGRAPH TO EDIT:');
-  contextParts.push(currentParagraph);
+  contextParts.push(currentCell);
   contextParts.push('');
 
-  if (afterParagraphs.length > 0) {
+  if (afterCells.length > 0) {
     contextParts.push('FOLLOWING PARAGRAPHS (for context, do not edit):');
-    afterParagraphs.forEach((p, i) => {
-      contextParts.push(`[Paragraph ${paragraphIndex + 2 + i}]: ${p}`);
+    afterCells.forEach((p, i) => {
+      contextParts.push(`[Paragraph ${cellIndex + 2 + i}]: ${p}`);
     });
     contextParts.push('');
   }
@@ -353,21 +365,28 @@ async function generateEdit(params: {
   const isTerseMode = documentAdjustments && documentAdjustments.verbosityAdjust <= -0.5;
   const baseInstruction = instruction || 'Improve this paragraph according to my style preferences.';
 
-  if (isTerseMode) {
+  if (isTerseMode && !isGenerationRequest) {
     contextParts.push('EDIT INSTRUCTION: ' + baseInstruction);
     contextParts.push('');
     contextParts.push('⚠️ CRITICAL WORD COUNT REQUIREMENT ⚠️');
     contextParts.push('You MUST cut at least 30% of words. Count them. Original has approximately ' +
-      currentParagraph.split(/\s+/).length + ' words.');
+      currentCell.split(/\s+/).length + ' words.');
     contextParts.push('Your output MUST have fewer than ' +
-      Math.floor(currentParagraph.split(/\s+/).length * 0.7) + ' words.');
+      Math.floor(currentCell.split(/\s+/).length * 0.7) + ' words.');
     contextParts.push('If your edit is not significantly shorter, START OVER and cut more aggressively.');
   } else {
-    contextParts.push(`EDIT INSTRUCTION: ${baseInstruction}`);
+    contextParts.push(`INSTRUCTION: ${baseInstruction}`);
   }
 
   contextParts.push('');
-  contextParts.push('Return ONLY the edited paragraph text. Do not include any explanation.');
+
+  if (isGenerationRequest) {
+    contextParts.push('Return the content that fulfills the instruction above. You may generate new paragraphs, expand existing content, or rewrite as needed.');
+    contextParts.push('If multiple paragraphs are appropriate, separate them with blank lines.');
+    contextParts.push('Do not include explanations or meta-commentary - just return the content itself.');
+  } else {
+    contextParts.push('Return ONLY the edited paragraph text. Do not include any explanation.');
+  }
 
   const systemPrompt = contextParts.join('\n');
 

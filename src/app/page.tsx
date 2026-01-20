@@ -48,9 +48,9 @@ export default function Home() {
             description="A coordinated system of AI agents works together: Prompt Agent builds context, LLM generates edits, and Critique Agent ensures quality."
           />
           <FeatureCard
-            icon="📋"
-            title="Document Review"
-            description="Get high-level feedback on your document or sections. Specify goals, focus on areas like clarity or flow, and apply suggestions directly."
+            icon="✨"
+            title="Vibe Edit"
+            description="Document-level analysis that understands the big picture. Get intelligent suggestions for clarity, flow, and structure—then apply them directly."
           />
           <FeatureCard
             icon="📊"
@@ -99,7 +99,7 @@ export default function Home() {
             <StepCard
               number={1}
               title="Select Text"
-              description="Click paragraphs to select them. Use Shift+click for ranges or Cmd/Ctrl+click for multiple selections."
+              description="Click cells to select them. Use Shift+click for ranges or Cmd/Ctrl+click for multiple selections."
             />
             <StepCard
               number={2}

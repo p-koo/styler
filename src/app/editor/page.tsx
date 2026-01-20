@@ -7,7 +7,6 @@ import DiffView, { SideBySideDiff, type FeedbackType } from '@/components/DiffVi
 import CritiqueBadge from '@/components/CritiqueBadge';
 import DocumentProfilePanel from '@/components/DocumentProfilePanel';
 import FeedbackPanel, { type FeedbackPanelState, DEFAULT_FEEDBACK_STATE } from '@/components/FeedbackPanel';
-import AgentVisualization from '@/components/AgentVisualization';
 import SyntaxHighlighter, { type HighlightMode } from '@/components/SyntaxHighlighter';
 import type { AudienceProfile, CritiqueAnalysis } from '@/types';
 
@@ -28,8 +27,8 @@ interface DocumentSection {
   id: string;
   name: string;
   type: string;
-  startParagraph: number;
-  endParagraph: number;
+  startCell: number;
+  endCell: number;
   purpose: string;
 }
 
@@ -41,14 +40,14 @@ interface DocumentStructure {
   mainArgument: string;
 }
 
-interface Paragraph {
+interface Cell {
   id: string;
   index: number;
   content: string;
-  type?: 'paragraph' | 'heading'; // Default is 'paragraph'
+  type?: 'cell' | 'heading'; // Default is 'cell'
   edited?: string;
   editAccepted?: boolean;
-  originalBatchContent?: string; // For batch edits: combined original paragraphs
+  originalBatchContent?: string; // For batch edits: combined original cells
   critique?: CritiqueAnalysis; // Critique analysis for the suggested edit
   iterations?: number; // Number of orchestrator attempts
   convergenceHistory?: Array<{
@@ -57,12 +56,17 @@ interface Paragraph {
     adjustmentsMade: string[];
   }>;
   documentProfileApplied?: boolean; // Whether document-specific profile was used
+  // Batch edit per-cell tracking
+  batchEditStatus?: 'modified' | 'removed' | 'unchanged'; // Status in batch edit
+  batchEditContent?: string; // New content for this cell (if modified)
+  batchEditGroupId?: string; // Group ID to link cells in same batch edit
+  batchNewCells?: string[]; // New cells to be added (only on first cell of batch)
 }
 
 interface Document {
   id: string;
   title: string;
-  paragraphs: Paragraph[];
+  cells: Cell[];
   structure?: DocumentStructure;
 }
 
@@ -107,13 +111,13 @@ function detectSyntaxMode(content: string): HighlightMode {
 interface SavedDocumentInfo {
   id: string;
   title: string;
-  paragraphCount: number;
+  cellCount: number;
   updatedAt: string;
 }
 
 export default function EditorPage() {
   const [document, setDocument] = useState<Document | null>(null);
-  const [selectedParagraphs, setSelectedParagraphs] = useState<Set<number>>(new Set());
+  const [selectedCells, setSelectedCells] = useState<Set<number>>(new Set());
   const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -129,8 +133,8 @@ export default function EditorPage() {
   const [editingTitleValue, setEditingTitleValue] = useState('');
   const [savedDocuments, setSavedDocuments] = useState<SavedDocumentInfo[]>([]);
   const [showDocumentList, setShowDocumentList] = useState(true);
-  const [editingParagraphIndex, setEditingParagraphIndex] = useState<number | null>(null);
-  const [editingParagraphContent, setEditingParagraphContent] = useState('');
+  const [editingCellIndex, setEditingCellIndex] = useState<number | null>(null);
+  const [editingCellContent, setEditingCellContent] = useState('');
   const [showAIGenerate, setShowAIGenerate] = useState(false);
   const [generatePrompt, setGeneratePrompt] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
@@ -138,16 +142,23 @@ export default function EditorPage() {
   const [isExporting, setIsExporting] = useState(false);
   const [historyIndex, setHistoryIndex] = useState<number | null>(null); // null = current state, 0 = most recent snapshot, etc.
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const [futureStates, setFutureStates] = useState<Array<{ paragraphs: Paragraph[]; description: string }>>([]); // For redo
-  const [showDocProfile, setShowDocProfile] = useState(true); // Document profile panel - visible by default
-  const [showAgentViz, setShowAgentViz] = useState(false); // Agent visualization toggle
+  const abortControllerRef = useRef<AbortController | null>(null); // For canceling LLM requests
+  const [futureStates, setFutureStates] = useState<Array<{ cells: Cell[]; description: string }>>([]); // For redo
+  const [showDocProfile, setShowDocProfile] = useState(false); // Document profile panel
   const [darkMode, setDarkMode] = useState<'system' | 'light' | 'dark'>('system'); // Theme preference
   const [editorMode, setEditorMode] = useState<HighlightMode>('plain'); // Syntax highlighting mode
   const [showNavMenu, setShowNavMenu] = useState(false); // Navigation dropdown
-  const [showFeedbackPanel, setShowFeedbackPanel] = useState(false); // Document review/feedback panel
+  const [showFeedbackPanel, setShowFeedbackPanel] = useState(true); // Edit panel - visible by default
   const [feedbackStates, setFeedbackStates] = useState<Record<string, FeedbackPanelState>>({}); // Per-document feedback states
+  const [editMode, setEditMode] = useState<'vibe' | 'styler'>('vibe'); // Active tab in edit panel
+  const [selectedStylerTemplates, setSelectedStylerTemplates] = useState<string[]>([]); // Multi-select Styler templates
+  const [showNewDocModal, setShowNewDocModal] = useState(false); // New document creation modal
+  const [newDocMode, setNewDocMode] = useState<'blank' | 'paste' | 'generate'>('blank'); // How to start new doc
+  const [pasteContent, setPasteContent] = useState(''); // Content to paste for new doc
+  const [newDocTitle, setNewDocTitle] = useState(''); // Title for new doc
   const navMenuRef = useRef<HTMLDivElement>(null);
   const [searchQuery, setSearchQuery] = useState(''); // Document search
+  const [reviewHighlightedCells, setReviewHighlightedCells] = useState<Set<number>>(new Set()); // Cells highlighted from review suggestion
   const [searchResults, setSearchResults] = useState<number[]>([]); // Paragraph indices with matches
   const [currentSearchIndex, setCurrentSearchIndex] = useState(0); // Current match navigation
   const [compareVersions, setCompareVersions] = useState<[string | null, string | null]>([null, null]); // Version IDs to compare
@@ -250,7 +261,7 @@ export default function EditorPage() {
       return;
     }
     const query = searchQuery.toLowerCase();
-    const matches = document.paragraphs
+    const matches = document.cells
       .map((p, idx) => (p.content.toLowerCase().includes(query) ? idx : -1))
       .filter((idx) => idx !== -1);
     setSearchResults(matches);
@@ -278,9 +289,9 @@ export default function EditorPage() {
       newIndex = (currentSearchIndex - 1 + searchResults.length) % searchResults.length;
     }
     setCurrentSearchIndex(newIndex);
-    // Scroll to the paragraph
-    const paraEl = window.document.getElementById(`para-${searchResults[newIndex]}`);
-    paraEl?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    // Scroll to the cell
+    const cellEl = window.document.getElementById(`cell-${searchResults[newIndex]}`);
+    cellEl?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   };
 
   // Toggle version selection for comparison
@@ -319,7 +330,7 @@ export default function EditorPage() {
           body: JSON.stringify({
             id: document.id,
             title: document.title,
-            paragraphs: document.paragraphs,
+            cells: document.cells,
             structure: document.structure,
             selectedProfileId: activeProfile,
             syntaxMode: editorMode,
@@ -346,7 +357,7 @@ export default function EditorPage() {
     setIsExporting(true);
     try {
       // Build text content
-      const textContent = document.paragraphs
+      const textContent = document.cells
         .map((p) => p.content)
         .join('\n\n');
 
@@ -385,7 +396,7 @@ export default function EditorPage() {
       const data = await res.json();
       const loadedDoc = data.document;
       setDocument(loadedDoc as Document);
-      setSelectedParagraphs(new Set());
+      setSelectedCells(new Set());
       setLastSelectedIndex(null);
 
       // Restore the profile that was selected for this document
@@ -398,7 +409,7 @@ export default function EditorPage() {
         setEditorMode(loadedDoc.syntaxMode);
       } else {
         // Auto-detect from content
-        const fullContent = loadedDoc.paragraphs.map((p: { content: string }) => p.content).join('\n');
+        const fullContent = loadedDoc.cells.map((p: { content: string }) => p.content).join('\n');
         const detected = detectSyntaxMode(fullContent);
         setEditorMode(detected);
       }
@@ -431,13 +442,13 @@ export default function EditorPage() {
   }, [document?.id, loadDocumentsList]);
 
   // Analyze document structure
-  const analyzeDocument = useCallback(async (paragraphs: string[]) => {
+  const analyzeDocument = useCallback(async (cells: string[]) => {
     setIsAnalyzing(true);
     try {
       const res = await fetch('/api/document/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ paragraphs }),
+        body: JSON.stringify({ cells }),
       });
 
       if (res.ok) {
@@ -455,13 +466,13 @@ export default function EditorPage() {
   // Handle text paste/upload
   const handleTextUpload = useCallback(async (text: string, title?: string) => {
     // Parse into paragraphs
-    const paragraphTexts = text
+    const cellTexts = text
       .split(/\n\s*\n/)
       .map((p) => p.trim())
       .filter((p) => p.length > 0);
 
-    const paragraphs: Paragraph[] = paragraphTexts.map((content, index) => ({
-      id: `para-${index}`,
+    const cells: Cell[] = cellTexts.map((content, index) => ({
+      id: `cell-${index}`,
       index,
       content,
     }));
@@ -469,7 +480,7 @@ export default function EditorPage() {
     const newDoc: Document = {
       id: `doc-${Date.now()}`,
       title: title || 'Untitled Document',
-      paragraphs,
+      cells,
     };
 
     setDocument(newDoc);
@@ -480,7 +491,7 @@ export default function EditorPage() {
     setEditorMode(detectedMode);
 
     // Analyze structure in background
-    const structure = await analyzeDocument(paragraphTexts);
+    const structure = await analyzeDocument(cellTexts);
     if (structure) {
       setDocument((prev) => prev ? { ...prev, structure, title: structure.title || prev.title } : null);
     }
@@ -528,7 +539,16 @@ export default function EditorPage() {
   );
 
   // Handle paragraph click with multi-select support
-  const handleParagraphClick = useCallback((index: number, e: React.MouseEvent) => {
+  const handleCellClick = useCallback((index: number, e: React.MouseEvent) => {
+    // Switch to Styler tab when selecting cells (don't close panel)
+    if (showFeedbackPanel) {
+      setEditMode('styler');
+    } else {
+      // Open the panel on Styler tab when clicking a cell
+      setShowFeedbackPanel(true);
+      setEditMode('styler');
+    }
+
     if (e.shiftKey && lastSelectedIndex !== null) {
       // Shift+click: select range
       const start = Math.min(lastSelectedIndex, index);
@@ -537,10 +557,10 @@ export default function EditorPage() {
       for (let i = start; i <= end; i++) {
         newSelection.add(i);
       }
-      setSelectedParagraphs(newSelection);
+      setSelectedCells(newSelection);
     } else if (e.metaKey || e.ctrlKey) {
       // Cmd/Ctrl+click: toggle selection
-      setSelectedParagraphs((prev) => {
+      setSelectedCells((prev) => {
         const newSelection = new Set(prev);
         if (newSelection.has(index)) {
           newSelection.delete(index);
@@ -552,28 +572,38 @@ export default function EditorPage() {
       setLastSelectedIndex(index);
     } else {
       // Normal click: select single
-      setSelectedParagraphs(new Set([index]));
+      setSelectedCells(new Set([index]));
       setLastSelectedIndex(index);
     }
-  }, [lastSelectedIndex]);
+  }, [lastSelectedIndex, showFeedbackPanel]);
 
   // Clear selection
   const clearSelection = useCallback(() => {
-    setSelectedParagraphs(new Set());
+    setSelectedCells(new Set());
     setLastSelectedIndex(null);
   }, []);
 
   // Request edit with specific parameters (used by feedback panel Apply button)
-  const handleRequestEditDirect = useCallback(async (paragraphIndices: number[], instruction: string) => {
-    if (!document || paragraphIndices.length === 0) return;
+  const handleRequestEditDirect = useCallback(async (cellIndices: number[], instruction: string) => {
+    console.log('[Vibe Edit] handleRequestEditDirect called:', { cellIndices, instruction, hasDocument: !!document });
 
-    const selectedIndices = [...paragraphIndices].sort((a, b) => a - b);
+    if (!document || cellIndices.length === 0) {
+      console.log('[Vibe Edit] Early return - no document or empty cellIndices');
+      return;
+    }
+
+    const selectedIndices = [...cellIndices].sort((a, b) => a - b);
     const isMultiple = selectedIndices.length > 1;
+    console.log('[Vibe Edit] Processing:', { selectedIndices, isMultiple, totalCells: document.cells.length });
 
     // Update selection to show which paragraphs are being edited
-    setSelectedParagraphs(new Set(paragraphIndices));
+    setSelectedCells(new Set(cellIndices));
     setEditInstruction(instruction);
     setIsLoading(true);
+
+    // Create abort controller for this request
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
 
     try {
       if (isMultiple) {
@@ -581,44 +611,216 @@ export default function EditorPage() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            paragraphs: document.paragraphs.map((p) => p.content),
+            cells: document.cells.map((p) => p.content),
             selectedIndices,
             instruction,
             profileId: activeProfile,
             documentStructure: document.structure,
             model: selectedModel || undefined,
           }),
+          signal,
         });
 
-        if (!res.ok) throw new Error('Failed to get edit');
+        if (!res.ok) {
+          const errorData = await res.json().catch(() => ({}));
+          throw new Error(errorData.error || 'Failed to get edit');
+        }
 
         const data = await res.json();
+        const batchGroupId = `batch-${Date.now()}`;
+
+        // Split edited text into new paragraphs
+        const newParagraphs = (data.editedText as string)
+          .split(/\n\s*\n/)
+          .map((p) => p.trim())
+          .filter((p) => p.length > 0);
+
+        // Get original paragraphs
+        const originalParagraphs = selectedIndices.map((i) => document.cells[i]?.content || '');
+
+        // Check if this is an "add only" response (content was sampled, just new content returned)
+        const isAddOnly = data.isAddOnly === true;
+
+        // Detect if this is an "add" type instruction
+        const instructionLower = (instruction || '').toLowerCase();
+        const isAddInstruction = /\b(add|insert|prepend|include|create|write|generate)\s+(an?\s+)?(abstract|introduction|conclusion|section|paragraph|summary|title|header)/i.test(instructionLower);
+
+        // Debug logging
+        console.log('[Vibe Edit] Instruction:', instruction);
+        console.log('[Vibe Edit] Is add instruction:', isAddInstruction);
+        console.log('[Vibe Edit] Is add only (sampled):', isAddOnly);
+        console.log('[Vibe Edit] Original paragraphs:', originalParagraphs.length);
+        console.log('[Vibe Edit] New paragraphs from LLM:', newParagraphs.length);
+        console.log('[Vibe Edit] LLM response preview:', data.editedText?.slice(0, 500));
+
+        // For "add only" responses, skip similarity matching - just show new content as additions
+        if (isAddOnly) {
+          console.log('[Vibe Edit] Add only mode - showing new content as additions');
+          setDocument((prev) => {
+            if (!prev) return null;
+            const updated = { ...prev };
+            updated.cells = [...prev.cells];
+
+            // Mark all cells as unchanged
+            for (const idx of selectedIndices) {
+              updated.cells[idx] = {
+                ...updated.cells[idx],
+                batchEditStatus: 'unchanged',
+                batchEditGroupId: batchGroupId,
+              };
+            }
+
+            // Store new content to prepend on the first cell
+            const firstIndex = selectedIndices[0];
+            const combinedNewContent = newParagraphs.join('\n\n');
+            const originalCombined = selectedIndices
+              .map((i) => prev.cells[i]?.content || '')
+              .join('\n\n');
+
+            updated.cells[firstIndex] = {
+              ...updated.cells[firstIndex],
+              edited: combinedNewContent + '\n\n' + originalCombined, // New content + original
+              originalBatchContent: originalCombined,
+              batchEditStatus: 'unchanged',
+              batchEditGroupId: batchGroupId,
+            };
+
+            // Also store as new cells to be shown separately
+            if (newParagraphs.length > 0) {
+              (updated.cells[firstIndex] as Cell & { batchNewCells?: string[] }).batchNewCells = newParagraphs;
+            }
+
+            return updated;
+          });
+          // Skip similarity matching and go directly to scroll/cleanup
+        } else {
+
+        // Simple similarity check (word overlap)
+        const getSimilarity = (a: string, b: string): number => {
+          const wordsA = new Set(a.toLowerCase().split(/\s+/));
+          const wordsB = new Set(b.toLowerCase().split(/\s+/));
+          const intersection = [...wordsA].filter((w) => wordsB.has(w)).length;
+          const union = new Set([...wordsA, ...wordsB]).size;
+          return union > 0 ? intersection / union : 0;
+        };
+
+        // Match original paragraphs to new paragraphs
+        const matchedNew = new Set<number>();
+        const cellStatuses: Array<{
+          originalIndex: number;
+          status: 'modified' | 'removed' | 'unchanged';
+          newContent?: string;
+        }> = [];
+
+        // For "add" instructions, use a different strategy:
+        // - Use lower similarity threshold (0.15) to be more lenient
+        // - Never mark as "removed" - assume content is preserved
+        const similarityThreshold = isAddInstruction ? 0.15 : 0.3;
+
+        for (let i = 0; i < originalParagraphs.length; i++) {
+          let bestMatch = -1;
+          let bestSimilarity = similarityThreshold;
+
+          for (let j = 0; j < newParagraphs.length; j++) {
+            if (matchedNew.has(j)) continue;
+            const sim = getSimilarity(originalParagraphs[i], newParagraphs[j]);
+            if (sim > bestSimilarity) {
+              bestSimilarity = sim;
+              bestMatch = j;
+            }
+          }
+
+          if (bestMatch >= 0) {
+            matchedNew.add(bestMatch);
+            const isModified = originalParagraphs[i].trim() !== newParagraphs[bestMatch].trim();
+            cellStatuses.push({
+              originalIndex: selectedIndices[i],
+              status: isModified ? 'modified' : 'unchanged',
+              newContent: isModified ? newParagraphs[bestMatch] : undefined,
+            });
+          } else if (isAddInstruction) {
+            // For "add" instructions, assume original content is preserved unchanged
+            // if we can't find a match (don't mark as removed)
+            cellStatuses.push({
+              originalIndex: selectedIndices[i],
+              status: 'unchanged',
+            });
+          } else {
+            // No match found - this paragraph is removed
+            cellStatuses.push({
+              originalIndex: selectedIndices[i],
+              status: 'removed',
+            });
+          }
+        }
+
+        // Find new paragraphs that weren't matched (these are additions)
+        const newAdditions = newParagraphs
+          .filter((_, i) => !matchedNew.has(i))
+          .map((content) => content);
+
+        // Debug logging for matching results
+        console.log('[Vibe Edit] Cell statuses:', cellStatuses.map(s => ({ idx: s.originalIndex, status: s.status })));
+        console.log('[Vibe Edit] New additions:', newAdditions.length, newAdditions.map(a => a.slice(0, 100)));
+        console.log('[Vibe Edit] Matched indices:', [...matchedNew]);
+
+        // Check if we got a meaningful response
+        if (!data.editedText || data.editedText.trim().length === 0) {
+          console.error('[Vibe Edit] Empty response from LLM');
+          alert('The AI returned an empty response. Please try again with a different instruction.');
+          return;
+        }
 
         setDocument((prev) => {
           if (!prev) return null;
           const updated = { ...prev };
-          updated.paragraphs = [...prev.paragraphs];
+          updated.cells = [...prev.cells];
 
           const originalCombined = selectedIndices
-            .map((i) => prev.paragraphs[i]?.content || '')
+            .map((i) => prev.cells[i]?.content || '')
             .join('\n\n');
 
+          // Update each cell with its status
+          for (const status of cellStatuses) {
+            updated.cells[status.originalIndex] = {
+              ...updated.cells[status.originalIndex],
+              batchEditStatus: status.status,
+              batchEditContent: status.newContent,
+              batchEditGroupId: batchGroupId,
+            };
+          }
+
+          // Store the full edit on the first cell for the accept/reject flow
           const firstIndex = selectedIndices[0];
-          updated.paragraphs[firstIndex] = {
-            ...updated.paragraphs[firstIndex],
+          updated.cells[firstIndex] = {
+            ...updated.cells[firstIndex],
             edited: data.editedText,
             originalBatchContent: originalCombined,
+            batchEditStatus: cellStatuses[0]?.status,
+            batchEditContent: cellStatuses[0]?.newContent,
+            batchEditGroupId: batchGroupId,
           };
+
+          // Store info about new additions (we'll show them after the last selected cell)
+          if (newAdditions.length > 0) {
+            (updated.cells[firstIndex] as Cell & { batchNewCells?: string[] }).batchNewCells = newAdditions;
+          }
+
+          console.log('[Vibe Edit] Document updated, first cell now has edited:', !!updated.cells[firstIndex]?.edited);
           return updated;
         });
+        } // End of else block for non-isAddOnly path
       } else {
-        const paragraphIndex = selectedIndices[0];
+        // Single cell edit
+        console.log('[Vibe Edit] Single cell mode, index:', selectedIndices[0], 'instruction:', instruction);
+
+        const cellIndex = selectedIndices[0];
         const res = await fetch('/api/document/edit', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            paragraphs: document.paragraphs.map((p) => p.content),
-            paragraphIndex,
+            cells: document.cells.map((p) => p.content),
+            cellIndex,
             instruction,
             profileId: activeProfile,
             documentStructure: document.structure,
@@ -626,18 +828,23 @@ export default function EditorPage() {
             documentId: document.id,
             includeCritique: true,
           }),
+          signal,
         });
 
-        if (!res.ok) throw new Error('Failed to get edit');
+        if (!res.ok) {
+          const errorData = await res.json().catch(() => ({}));
+          throw new Error(errorData.error || 'Failed to get edit');
+        }
 
         const data = await res.json();
+        console.log('[Vibe Edit] Single cell response:', data.editedText?.slice(0, 300));
 
         setDocument((prev) => {
           if (!prev) return null;
           const updated = { ...prev };
-          updated.paragraphs = [...prev.paragraphs];
-          updated.paragraphs[paragraphIndex] = {
-            ...updated.paragraphs[paragraphIndex],
+          updated.cells = [...prev.cells];
+          updated.cells[cellIndex] = {
+            ...updated.cells[cellIndex],
             edited: data.editedText,
             critique: data.critique,
             iterations: data.iterations,
@@ -649,41 +856,53 @@ export default function EditorPage() {
       }
 
       // Scroll to show the edit
-      const element = window.document.getElementById(`paragraph-${selectedIndices[0]}`);
+      const element = window.document.getElementById(`cell-${selectedIndices[0]}`);
       if (element) {
         element.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
     } catch (error) {
+      // Don't show error if request was aborted by user
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.log('Edit request cancelled by user');
+        return;
+      }
       console.error('Edit request failed:', error);
-      alert('Failed to get edit suggestion');
+      const message = error instanceof Error ? error.message : 'Failed to get edit suggestion';
+      alert(`Edit failed: ${message}`);
     } finally {
       setIsLoading(false);
+      abortControllerRef.current = null;
     }
   }, [document, activeProfile, selectedModel]);
 
   // Request edit for selected paragraphs
   const handleRequestEdit = useCallback(async () => {
-    if (!document || selectedParagraphs.size === 0) return;
+    if (!document || selectedCells.size === 0) return;
 
-    const selectedIndices = Array.from(selectedParagraphs).sort((a, b) => a - b);
+    const selectedIndices = Array.from(selectedCells).sort((a, b) => a - b);
     const isMultiple = selectedIndices.length > 1;
 
     setIsLoading(true);
 
+    // Create abort controller for this request
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
+
     try {
       if (isMultiple) {
-        // Multiple paragraphs: use batch edit endpoint
+        // Multiple cells: use batch edit endpoint
         const res = await fetch('/api/document/edit-batch', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            paragraphs: document.paragraphs.map((p) => p.content),
+            cells: document.cells.map((p) => p.content),
             selectedIndices,
             instruction: editInstruction || 'Improve logical flow and coherence, rearranging if needed',
             profileId: activeProfile,
             documentStructure: document.structure,
             model: selectedModel || undefined,
           }),
+          signal,
         });
 
         if (!res.ok) throw new Error('Failed to get edit');
@@ -694,17 +913,17 @@ export default function EditorPage() {
         setDocument((prev) => {
           if (!prev) return null;
           const updated = { ...prev };
-          updated.paragraphs = [...prev.paragraphs];
+          updated.cells = [...prev.cells];
 
           // Combine original paragraphs for comparison
           const originalCombined = selectedIndices
-            .map((i) => prev.paragraphs[i]?.content || '')
+            .map((i) => prev.cells[i]?.content || '')
             .join('\n\n');
 
           // Mark the first selected paragraph with the combined edit
           const firstIndex = selectedIndices[0];
-          updated.paragraphs[firstIndex] = {
-            ...updated.paragraphs[firstIndex],
+          updated.cells[firstIndex] = {
+            ...updated.cells[firstIndex],
             edited: data.editedText, // Combined/restructured text
             originalBatchContent: originalCombined, // Store original for diff
           };
@@ -712,20 +931,21 @@ export default function EditorPage() {
         });
       } else {
         // Single paragraph: use existing endpoint
-        const paragraphIndex = selectedIndices[0];
+        const cellIndex = selectedIndices[0];
         const res = await fetch('/api/document/edit', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            paragraphs: document.paragraphs.map((p) => p.content),
-            paragraphIndex,
-            instruction: editInstruction || 'Improve this paragraph',
+            cells: document.cells.map((p) => p.content),
+            cellIndex,
+            instruction: editInstruction || 'Improve this cell',
             profileId: activeProfile,
             documentStructure: document.structure,
             model: selectedModel || undefined,
             documentId: document.id,
             includeCritique: true,
           }),
+          signal,
         });
 
         if (!res.ok) throw new Error('Failed to get edit');
@@ -736,9 +956,9 @@ export default function EditorPage() {
         setDocument((prev) => {
           if (!prev) return null;
           const updated = { ...prev };
-          updated.paragraphs = [...prev.paragraphs];
-          updated.paragraphs[paragraphIndex] = {
-            ...updated.paragraphs[paragraphIndex],
+          updated.cells = [...prev.cells];
+          updated.cells[cellIndex] = {
+            ...updated.cells[cellIndex],
             edited: data.editedText,
             critique: data.critique,
             iterations: data.iterations,
@@ -749,23 +969,38 @@ export default function EditorPage() {
         });
       }
     } catch (err) {
+      // Don't show error if request was aborted by user
+      if (err instanceof Error && err.name === 'AbortError') {
+        console.log('Edit request cancelled by user');
+        return;
+      }
       console.error('Edit error:', err);
       alert('Failed to get edit suggestion');
     } finally {
       setIsLoading(false);
+      abortControllerRef.current = null;
     }
-  }, [document, selectedParagraphs, editInstruction, activeProfile, selectedModel]);
+  }, [document, selectedCells, editInstruction, activeProfile, selectedModel]);
+
+  // Stop/cancel the current LLM request
+  const handleStopEdit = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+      setIsLoading(false);
+    }
+  }, []);
 
   // Accept edit with final text (may be partially accepted or batch edit)
   const handleAcceptEdit = useCallback((index: number, finalText: string) => {
     console.log('handleAcceptEdit called:', { index, finalTextLength: finalText?.length });
-    const selectedIndices = Array.from(selectedParagraphs).sort((a, b) => a - b);
+    const selectedIndices = Array.from(selectedCells).sort((a, b) => a - b);
     const isBatchEdit = selectedIndices.length > 1 && selectedIndices[0] === index;
 
     // Get original and suggested text before updating document
-    const originalText = document?.paragraphs[index]?.originalBatchContent || document?.paragraphs[index]?.content || '';
-    const suggestedEdit = document?.paragraphs[index]?.edited || '';
-    const critique = document?.paragraphs[index]?.critique;
+    const originalText = document?.cells[index]?.originalBatchContent || document?.cells[index]?.content || '';
+    const suggestedEdit = document?.cells[index]?.edited || '';
+    const critique = document?.cells[index]?.critique;
     const docId = document?.id;
 
     // Determine if this is a partial acceptance
@@ -779,10 +1014,10 @@ export default function EditorPage() {
       const snapshot = saveSnapshot(
         prev.id,
         prev.title,
-        prev.paragraphs.map((p) => ({ id: p.id, index: p.index, content: p.content })),
+        prev.cells.map((p) => ({ id: p.id, index: p.index, content: p.content })),
         isBatchEdit
-          ? `Edited paragraphs ${selectedIndices.map(i => i + 1).join(', ')}`
-          : `Edited paragraph ${index + 1}`
+          ? `Edited cells ${selectedIndices.map(i => i + 1).join(', ')}`
+          : `Edited cell ${index + 1}`
       );
 
       // Update history state
@@ -794,20 +1029,20 @@ export default function EditorPage() {
       if (isBatchEdit) {
         // Batch edit: replace selected paragraphs with new content
         // Split the final text into paragraphs
-        const newParagraphTexts = finalText
+        const newCellTexts = finalText
           .split(/\n\s*\n/)
           .map((p) => p.trim())
           .filter((p) => p.length > 0);
 
         // Build new paragraphs array
-        const newParagraphs: Paragraph[] = [];
+        const newCells: Cell[] = [];
         let newIndex = 0;
 
-        for (let i = 0; i < prev.paragraphs.length; i++) {
+        for (let i = 0; i < prev.cells.length; i++) {
           if (i === selectedIndices[0]) {
             // Insert new paragraphs at the first selected index
-            for (const text of newParagraphTexts) {
-              newParagraphs.push({
+            for (const text of newCellTexts) {
+              newCells.push({
                 id: `para-${Date.now()}-${newIndex}`,
                 index: newIndex,
                 content: text,
@@ -817,8 +1052,8 @@ export default function EditorPage() {
             }
           } else if (!selectedIndices.includes(i)) {
             // Keep non-selected paragraphs
-            newParagraphs.push({
-              ...prev.paragraphs[i],
+            newCells.push({
+              ...prev.cells[i],
               index: newIndex,
             });
             newIndex++;
@@ -826,20 +1061,39 @@ export default function EditorPage() {
           // Skip other selected paragraphs (they're being replaced)
         }
 
-        return { ...prev, paragraphs: newParagraphs };
+        return { ...prev, cells: newCells };
       } else {
-        // Single paragraph edit
+        // Single paragraph edit - also clear any batch edit status
+        const batchGroupId = prev.cells[index]?.batchEditGroupId;
         const updated = { ...prev };
-        updated.paragraphs = [...prev.paragraphs];
-        updated.paragraphs[index] = {
-          ...updated.paragraphs[index],
-          content: finalText,
-          edited: undefined,
-          critique: undefined,
-          iterations: undefined,
-          convergenceHistory: undefined,
-          editAccepted: true,
-        };
+        updated.cells = prev.cells.map((cell, i) => {
+          if (i === index) {
+            return {
+              ...cell,
+              content: finalText,
+              edited: undefined,
+              critique: undefined,
+              iterations: undefined,
+              convergenceHistory: undefined,
+              editAccepted: true,
+              batchEditStatus: undefined,
+              batchEditContent: undefined,
+              batchEditGroupId: undefined,
+              batchNewCells: undefined,
+            };
+          }
+          // Clear batch edit status from other cells in same group
+          if (batchGroupId && cell.batchEditGroupId === batchGroupId) {
+            return {
+              ...cell,
+              batchEditStatus: undefined,
+              batchEditContent: undefined,
+              batchEditGroupId: undefined,
+              batchNewCells: undefined,
+            };
+          }
+          return cell;
+        });
         return updated;
       }
     });
@@ -852,7 +1106,7 @@ export default function EditorPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           documentId: docId,
-          paragraphIndex: index,
+          cellIndex: index,
           originalText,
           suggestedEdit,
           finalText,
@@ -874,29 +1128,42 @@ export default function EditorPage() {
     if (isBatchEdit) {
       clearSelection();
     }
-  }, [document, selectedParagraphs, clearSelection, editInstruction, activeProfile, selectedModel]);
+    setReviewHighlightedCells(new Set()); // Clear review highlighting
+  }, [document, selectedCells, clearSelection, editInstruction, activeProfile, selectedModel]);
 
   // Reject edit
   const handleRejectEdit = useCallback((index: number) => {
     console.log('handleRejectEdit called:', { index });
     // Get original and suggested text before updating document
-    const originalText = document?.paragraphs[index]?.originalBatchContent || document?.paragraphs[index]?.content || '';
-    const suggestedEdit = document?.paragraphs[index]?.edited || '';
-    const critique = document?.paragraphs[index]?.critique;
+    const originalText = document?.cells[index]?.originalBatchContent || document?.cells[index]?.content || '';
+    const suggestedEdit = document?.cells[index]?.edited || '';
+    const critique = document?.cells[index]?.critique;
     const docId = document?.id;
+
+    // Get the batch group ID to clear all related cells
+    const batchGroupId = document?.cells[index]?.batchEditGroupId;
 
     setDocument((prev) => {
       if (!prev) return null;
       const updated = { ...prev };
-      updated.paragraphs = [...prev.paragraphs];
-      updated.paragraphs[index] = {
-        ...updated.paragraphs[index],
-        edited: undefined,
-        critique: undefined,
-        iterations: undefined,
-        convergenceHistory: undefined,
-        originalBatchContent: undefined, // Clear batch content too
-      };
+      updated.cells = prev.cells.map((cell) => {
+        // Clear this cell or any cell in the same batch group
+        if (cell.index === index || (batchGroupId && cell.batchEditGroupId === batchGroupId)) {
+          return {
+            ...cell,
+            edited: undefined,
+            critique: undefined,
+            iterations: undefined,
+            convergenceHistory: undefined,
+            originalBatchContent: undefined,
+            batchEditStatus: undefined,
+            batchEditContent: undefined,
+            batchEditGroupId: undefined,
+            batchNewCells: undefined,
+          };
+        }
+        return cell;
+      });
       return updated;
     });
 
@@ -908,7 +1175,7 @@ export default function EditorPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           documentId: docId,
-          paragraphIndex: index,
+          cellIndex: index,
           originalText,
           suggestedEdit,
           finalText: originalText, // User kept original
@@ -927,6 +1194,7 @@ export default function EditorPage() {
     }
 
     clearSelection();
+    setReviewHighlightedCells(new Set()); // Clear review highlighting
   }, [document, clearSelection, editInstruction, activeProfile, selectedModel]);
 
   // Handle quick feedback on edit quality
@@ -953,13 +1221,13 @@ export default function EditorPage() {
 
   // Save direct paragraph edit
   const handleSaveDirectEdit = useCallback(() => {
-    if (editingParagraphIndex === null || !document) return;
+    if (editingCellIndex === null || !document) return;
 
-    const originalContent = document.paragraphs[editingParagraphIndex]?.content;
-    if (editingParagraphContent === originalContent) {
+    const originalContent = document.cells[editingCellIndex]?.content;
+    if (editingCellContent === originalContent) {
       // No changes, just exit edit mode
-      setEditingParagraphIndex(null);
-      setEditingParagraphContent('');
+      setEditingCellIndex(null);
+      setEditingCellContent('');
       return;
     }
 
@@ -967,8 +1235,8 @@ export default function EditorPage() {
     const snapshot = saveSnapshot(
       document.id,
       document.title,
-      document.paragraphs.map((p) => ({ id: p.id, index: p.index, content: p.content })),
-      `Directly edited paragraph ${editingParagraphIndex + 1}`
+      document.cells.map((p) => ({ id: p.id, index: p.index, content: p.content })),
+      `Directly edited cell ${editingCellIndex + 1}`
     );
 
     // Update history state
@@ -981,22 +1249,22 @@ export default function EditorPage() {
     setDocument((prev) => {
       if (!prev) return null;
       const updated = { ...prev };
-      updated.paragraphs = [...prev.paragraphs];
-      updated.paragraphs[editingParagraphIndex] = {
-        ...updated.paragraphs[editingParagraphIndex],
-        content: editingParagraphContent,
+      updated.cells = [...prev.cells];
+      updated.cells[editingCellIndex] = {
+        ...updated.cells[editingCellIndex],
+        content: editingCellContent,
       };
       return updated;
     });
 
-    setEditingParagraphIndex(null);
-    setEditingParagraphContent('');
-  }, [document, editingParagraphIndex, editingParagraphContent]);
+    setEditingCellIndex(null);
+    setEditingCellContent('');
+  }, [document, editingCellIndex, editingCellContent]);
 
   // Cancel direct paragraph edit
   const handleCancelDirectEdit = useCallback(() => {
-    setEditingParagraphIndex(null);
-    setEditingParagraphContent('');
+    setEditingCellIndex(null);
+    setEditingCellContent('');
   }, []);
 
   // Revert to a snapshot
@@ -1008,7 +1276,7 @@ export default function EditorPage() {
       const currentSnapshot = saveSnapshot(
         prev.id,
         prev.title,
-        prev.paragraphs.map((p) => ({ id: p.id, index: p.index, content: p.content })),
+        prev.cells.map((p) => ({ id: p.id, index: p.index, content: p.content })),
         'Before revert'
       );
 
@@ -1019,7 +1287,7 @@ export default function EditorPage() {
       });
 
       // Restore paragraphs from snapshot
-      const restoredParagraphs: Paragraph[] = snapshot.paragraphs.map((p) => ({
+      const restoredCells: Cell[] = snapshot.cells.map((p) => ({
         id: p.id,
         index: p.index,
         content: p.content,
@@ -1027,80 +1295,133 @@ export default function EditorPage() {
 
       return {
         ...prev,
-        paragraphs: restoredParagraphs,
+        cells: restoredCells,
       };
     });
 
     setShowHistory(false);
-    setSelectedParagraphs(new Set());
+    setSelectedCells(new Set());
     setLastSelectedIndex(null);
   }, []);
 
   // Clear document (close without saving)
   const handleClearDocument = useCallback(() => {
     setDocument(null);
-    setSelectedParagraphs(new Set());
+    setSelectedCells(new Set());
     setLastSelectedIndex(null);
   }, []);
 
   // Create new blank document
   const handleNewDocument = useCallback(() => {
-    const newDoc: Document = {
-      id: `doc-${Date.now()}`,
-      title: 'Untitled Document',
-      paragraphs: [],
-    };
-    setDocument(newDoc);
-    setSelectedParagraphs(new Set());
-    setLastSelectedIndex(null);
-    setEditorMode('plain'); // Reset to plain for new document
-    setShowAIGenerate(true); // Show AI panel to help start
+    // Reset new doc modal state and show it
+    setNewDocMode('blank');
+    setPasteContent('');
+    setNewDocTitle('');
+    setShowNewDocModal(true);
   }, []);
 
-  // Insert a new paragraph or heading at a specific position
-  const handleInsertContent = useCallback((afterIndex: number | null, type: 'paragraph' | 'heading' = 'paragraph', content: string = '') => {
-    const defaultContent = type === 'heading' ? 'New Section' : 'New paragraph...';
+  // Actually create the new document based on mode
+  const handleCreateNewDocument = useCallback(() => {
+    const title = newDocTitle.trim() || 'Untitled Document';
+
+    if (newDocMode === 'paste' && pasteContent.trim()) {
+      // Parse pasted content into cells
+      const paragraphs = pasteContent
+        .split(/\n\s*\n/)
+        .map(p => p.trim())
+        .filter(p => p.length > 0);
+
+      const cells: Cell[] = paragraphs.map((content, index) => ({
+        id: `cell-${index}`,
+        index,
+        content,
+      }));
+
+      const newDoc: Document = {
+        id: `doc-${Date.now()}`,
+        title,
+        cells,
+      };
+      setDocument(newDoc);
+      setEditorMode(detectSyntaxMode(pasteContent));
+    } else if (newDocMode === 'generate') {
+      // Create empty doc and show AI generate modal
+      const newDoc: Document = {
+        id: `doc-${Date.now()}`,
+        title,
+        cells: [],
+      };
+      setDocument(newDoc);
+      setEditorMode('plain');
+      setShowAIGenerate(true);
+    } else {
+      // Blank document - create with one empty cell for immediate editing
+      const newDoc: Document = {
+        id: `doc-${Date.now()}`,
+        title,
+        cells: [{
+          id: 'cell-0',
+          index: 0,
+          content: '',
+        }],
+      };
+      setDocument(newDoc);
+      setEditorMode('plain');
+      // Select the first cell for immediate editing
+      setSelectedCells(new Set([0]));
+      setEditingCellIndex(0);
+      setEditingCellContent('');
+    }
+
+    setSelectedCells(new Set());
+    setLastSelectedIndex(null);
+    setShowNewDocModal(false);
+  }, [newDocMode, pasteContent, newDocTitle]);
+
+  // Insert a new cell or heading at a specific position
+  const handleInsertContent = useCallback((afterIndex: number | null, type: 'cell' | 'heading' = 'cell', content: string = '') => {
+    const defaultContent = type === 'heading' ? 'New Section' : 'New cell...';
 
     setDocument((prev) => {
       if (!prev) return null;
 
-      const newItem: Paragraph = {
+      const newItem: Cell = {
         id: `${type}-${Date.now()}`,
         index: 0, // Will be recalculated
         content: content || defaultContent,
         type,
       };
 
-      const newParagraphs = [...prev.paragraphs];
+      const newCells = [...prev.cells];
 
       if (afterIndex === null || afterIndex < 0) {
         // Insert at beginning
-        newParagraphs.unshift(newItem);
-      } else if (afterIndex >= prev.paragraphs.length - 1) {
+        newCells.unshift(newItem);
+      } else if (afterIndex >= prev.cells.length - 1) {
         // Insert at end
-        newParagraphs.push(newItem);
+        newCells.push(newItem);
       } else {
         // Insert after the specified index
-        newParagraphs.splice(afterIndex + 1, 0, newItem);
+        newCells.splice(afterIndex + 1, 0, newItem);
       }
 
       // Recalculate indices
-      newParagraphs.forEach((p, i) => {
+      newCells.forEach((p, i) => {
         p.index = i;
       });
 
-      return { ...prev, paragraphs: newParagraphs };
+      return { ...prev, cells: newCells };
     });
 
     // Start editing the new content
     const newIndex = afterIndex === null ? 0 : afterIndex + 1;
-    setEditingParagraphIndex(newIndex);
-    setEditingParagraphContent(content || defaultContent);
+    setEditingCellIndex(newIndex);
+    setEditingCellContent(content || defaultContent);
   }, []);
 
   // Convenience wrappers
-  const handleInsertParagraph = useCallback((afterIndex: number | null, content: string = '') => {
-    handleInsertContent(afterIndex, 'paragraph', content);
+  const handleInsertCell = useCallback((afterIndex: number | null, content: string = '') => {
+    handleInsertContent(afterIndex, 'cell', content);
   }, [handleInsertContent]);
 
   const handleInsertHeading = useCallback((afterIndex: number | null, content: string = '') => {
@@ -1109,41 +1430,199 @@ export default function EditorPage() {
 
   // Delete a single block
   const handleDeleteBlock = useCallback((index: number) => {
+    if (!document) return;
+
+    // Save snapshot before making the change
+    const snapshot = saveSnapshot(
+      document.id,
+      document.title,
+      document.cells.map((p) => ({ id: p.id, index: p.index, content: p.content })),
+      `Deleted cell ${index + 1}`
+    );
+
+    // Update history state
+    setHistory((h) => {
+      if (!h) return { documentId: document.id, snapshots: [snapshot], maxSnapshots: 50 };
+      return { ...h, snapshots: [snapshot, ...h.snapshots].slice(0, 50) };
+    });
+    setFutureStates([]); // Clear redo stack
+
     setDocument((prev) => {
       if (!prev) return null;
-      const newParagraphs = prev.paragraphs.filter((_, i) => i !== index);
-      newParagraphs.forEach((p, i) => { p.index = i; });
-      return { ...prev, paragraphs: newParagraphs };
+      const newCells = prev.cells.filter((_, i) => i !== index);
+      newCells.forEach((p, i) => { p.index = i; });
+      return { ...prev, cells: newCells };
     });
-    setSelectedParagraphs(new Set());
+    setSelectedCells(new Set());
     setLastSelectedIndex(null);
-  }, []);
+  }, [document]);
 
   // Delete selected blocks
   const handleDeleteSelected = useCallback(() => {
-    if (selectedParagraphs.size === 0) return;
+    if (!document || selectedCells.size === 0) return;
+
+    const selectedIndices = Array.from(selectedCells).sort((a, b) => a - b);
+
+    // Save snapshot before making the change
+    const snapshot = saveSnapshot(
+      document.id,
+      document.title,
+      document.cells.map((p) => ({ id: p.id, index: p.index, content: p.content })),
+      `Deleted cells ${selectedIndices.map(i => i + 1).join(', ')}`
+    );
+
+    // Update history state
+    setHistory((h) => {
+      if (!h) return { documentId: document.id, snapshots: [snapshot], maxSnapshots: 50 };
+      return { ...h, snapshots: [snapshot, ...h.snapshots].slice(0, 50) };
+    });
+    setFutureStates([]); // Clear redo stack
+
     setDocument((prev) => {
       if (!prev) return null;
-      const newParagraphs = prev.paragraphs.filter((_, i) => !selectedParagraphs.has(i));
-      newParagraphs.forEach((p, i) => { p.index = i; });
-      return { ...prev, paragraphs: newParagraphs };
+      const newCells = prev.cells.filter((_, i) => !selectedCells.has(i));
+      newCells.forEach((p, i) => { p.index = i; });
+      return { ...prev, cells: newCells };
     });
-    setSelectedParagraphs(new Set());
+    setSelectedCells(new Set());
     setLastSelectedIndex(null);
-  }, [selectedParagraphs]);
+  }, [document, selectedCells]);
 
   // Copy selected blocks to clipboard
   const handleCopySelected = useCallback(() => {
-    if (!document || selectedParagraphs.size === 0) return;
-    const selectedIndices = Array.from(selectedParagraphs).sort((a, b) => a - b);
+    if (!document || selectedCells.size === 0) return;
+    const selectedIndices = Array.from(selectedCells).sort((a, b) => a - b);
     const text = selectedIndices
-      .map((i) => document.paragraphs[i]?.content || '')
+      .map((i) => document.cells[i]?.content || '')
       .join('\n\n');
     navigator.clipboard.writeText(text);
-  }, [document, selectedParagraphs]);
+  }, [document, selectedCells]);
+
+  // Split a cell into multiple cells (by double newlines or sentences)
+  const handleSplitCell = useCallback((index: number, splitBy: 'newlines' | 'sentences' = 'newlines') => {
+    if (!document || index < 0 || index >= document.cells.length) return;
+
+    const cell = document.cells[index];
+    const content = cell.content;
+
+    let parts: string[];
+    if (splitBy === 'newlines') {
+      // Split by double newlines or single newlines
+      parts = content.split(/\n\s*\n|\n/).map(p => p.trim()).filter(p => p.length > 0);
+    } else {
+      // Split by sentences (period, exclamation, question mark followed by space or end)
+      parts = content.split(/(?<=[.!?])\s+/).map(p => p.trim()).filter(p => p.length > 0);
+    }
+
+    // If only one part, nothing to split
+    if (parts.length <= 1) return;
+
+    // Save snapshot before making the change
+    const snapshot = saveSnapshot(
+      document.id,
+      document.title,
+      document.cells.map((p) => ({ id: p.id, index: p.index, content: p.content })),
+      `Split cell ${index + 1} into ${parts.length} cells`
+    );
+
+    // Update history state
+    setHistory((h) => {
+      if (!h) return { documentId: document.id, snapshots: [snapshot], maxSnapshots: 50 };
+      return { ...h, snapshots: [snapshot, ...h.snapshots].slice(0, 50) };
+    });
+    setFutureStates([]); // Clear redo stack
+
+    setDocument((prev) => {
+      if (!prev) return null;
+
+      // Create new cells from the parts
+      const newCells = [...prev.cells];
+      const newItems: Cell[] = parts.map((part, i) => ({
+        id: i === 0 ? cell.id : `cell-${Date.now()}-${i}`,
+        index: 0, // Will be recalculated
+        content: part,
+        type: cell.type,
+      }));
+
+      // Replace the original cell with the new parts
+      newCells.splice(index, 1, ...newItems);
+
+      // Recalculate indices
+      newCells.forEach((p, i) => { p.index = i; });
+
+      return { ...prev, cells: newCells };
+    });
+
+    setSelectedCells(new Set());
+    setLastSelectedIndex(null);
+  }, [document]);
+
+  // Merge selected consecutive cells into one
+  const handleMergeCells = useCallback(() => {
+    if (!document || selectedCells.size < 2) return;
+
+    const selectedIndices = Array.from(selectedCells).sort((a, b) => a - b);
+
+    // Check if selected cells are consecutive
+    const isConsecutive = selectedIndices.every((val, i) =>
+      i === 0 || val === selectedIndices[i - 1] + 1
+    );
+
+    if (!isConsecutive) {
+      alert('Can only merge consecutive cells');
+      return;
+    }
+
+    // Save snapshot before making the change
+    const snapshot = saveSnapshot(
+      document.id,
+      document.title,
+      document.cells.map((p) => ({ id: p.id, index: p.index, content: p.content })),
+      `Merged cells ${selectedIndices.map(i => i + 1).join(', ')}`
+    );
+
+    // Update history state
+    setHistory((h) => {
+      if (!h) return { documentId: document.id, snapshots: [snapshot], maxSnapshots: 50 };
+      return { ...h, snapshots: [snapshot, ...h.snapshots].slice(0, 50) };
+    });
+    setFutureStates([]); // Clear redo stack
+
+    setDocument((prev) => {
+      if (!prev) return null;
+
+      const firstIndex = selectedIndices[0];
+      const firstCell = prev.cells[firstIndex];
+
+      // Combine content with double newlines
+      const mergedContent = selectedIndices
+        .map(i => prev.cells[i]?.content || '')
+        .join('\n\n');
+
+      // Create the merged cell
+      const mergedCell: Cell = {
+        id: firstCell.id,
+        index: 0, // Will be recalculated
+        content: mergedContent,
+        type: firstCell.type,
+      };
+
+      // Remove the selected cells and insert the merged one
+      const newCells = prev.cells.filter((_, i) => !selectedCells.has(i));
+      newCells.splice(firstIndex, 0, mergedCell);
+
+      // Recalculate indices
+      newCells.forEach((p, i) => { p.index = i; });
+
+      return { ...prev, cells: newCells };
+    });
+
+    setSelectedCells(new Set());
+    setLastSelectedIndex(null);
+  }, [document, selectedCells]);
 
   // Find first different paragraph between two arrays
-  const findFirstDifference = useCallback((oldParas: Paragraph[], newParas: Paragraph[]): number => {
+  const findFirstDifference = useCallback((oldParas: Cell[], newParas: Cell[]): number => {
     const maxLen = Math.max(oldParas.length, newParas.length);
     for (let i = 0; i < maxLen; i++) {
       if (!oldParas[i] || !newParas[i] || oldParas[i].content !== newParas[i].content) {
@@ -1154,7 +1633,7 @@ export default function EditorPage() {
   }, []);
 
   // Scroll to a paragraph by index
-  const scrollToParagraph = useCallback((index: number) => {
+  const scrollToCell = useCallback((index: number) => {
     setTimeout(() => {
       const element = window.document.querySelector(`[data-para-index="${index}"]`);
       if (element) {
@@ -1172,11 +1651,11 @@ export default function EditorPage() {
   const handleUndo = useCallback(() => {
     if (!document || !history || history.snapshots.length === 0) return;
 
-    const currentParagraphs = [...document.paragraphs];
+    const currentCells = [...document.cells];
 
     // Save current state to future states for redo
     setFutureStates((prev) => [
-      { paragraphs: currentParagraphs, description: 'Current state' },
+      { cells: currentCells, description: 'Current state' },
       ...prev,
     ]);
 
@@ -1187,39 +1666,39 @@ export default function EditorPage() {
     const snapshot = history.snapshots[snapshotIndex];
 
     // Restore paragraphs from snapshot
-    const restoredParagraphs: Paragraph[] = snapshot.paragraphs.map((p) => ({
+    const restoredCells: Cell[] = snapshot.cells.map((p) => ({
       id: p.id,
       index: p.index,
       content: p.content,
     }));
 
     // Find first difference and scroll to it
-    const diffIndex = findFirstDifference(currentParagraphs, restoredParagraphs);
+    const diffIndex = findFirstDifference(currentCells, restoredCells);
 
-    setDocument((prev) => prev ? { ...prev, paragraphs: restoredParagraphs } : null);
+    setDocument((prev) => prev ? { ...prev, cells: restoredCells } : null);
     setHistoryIndex(snapshotIndex);
-    setSelectedParagraphs(new Set());
+    setSelectedCells(new Set());
     setLastSelectedIndex(null);
 
-    if (diffIndex >= 0 && diffIndex < restoredParagraphs.length) {
-      scrollToParagraph(diffIndex);
+    if (diffIndex >= 0 && diffIndex < restoredCells.length) {
+      scrollToCell(diffIndex);
     }
-  }, [document, history, historyIndex, findFirstDifference, scrollToParagraph]);
+  }, [document, history, historyIndex, findFirstDifference, scrollToCell]);
 
   // Redo - go forward in history
   const handleRedo = useCallback(() => {
     if (!document || futureStates.length === 0) return;
 
-    const currentParagraphs = [...document.paragraphs];
+    const currentCells = [...document.cells];
 
     // Get the next future state
     const [nextState, ...remainingFutures] = futureStates;
 
     // Find first difference and scroll to it
-    const diffIndex = findFirstDifference(currentParagraphs, nextState.paragraphs);
+    const diffIndex = findFirstDifference(currentCells, nextState.cells);
 
     // Restore paragraphs
-    setDocument((prev) => prev ? { ...prev, paragraphs: nextState.paragraphs } : null);
+    setDocument((prev) => prev ? { ...prev, cells: nextState.cells } : null);
     setFutureStates(remainingFutures);
 
     // Update history index
@@ -1229,13 +1708,13 @@ export default function EditorPage() {
       setHistoryIndex(historyIndex - 1);
     }
 
-    setSelectedParagraphs(new Set());
+    setSelectedCells(new Set());
     setLastSelectedIndex(null);
 
-    if (diffIndex >= 0 && diffIndex < nextState.paragraphs.length) {
-      scrollToParagraph(diffIndex);
+    if (diffIndex >= 0 && diffIndex < nextState.cells.length) {
+      scrollToCell(diffIndex);
     }
-  }, [document, futureStates, historyIndex, findFirstDifference, scrollToParagraph]);
+  }, [document, futureStates, historyIndex, findFirstDifference, scrollToCell]);
 
   // Check if undo/redo are available
   const canUndo = history && history.snapshots.length > 0 && (historyIndex === null || historyIndex < history.snapshots.length - 1);
@@ -1256,7 +1735,7 @@ export default function EditorPage() {
           profileId: activeProfile,
           documentContext: document ? {
             title: document.title,
-            existingParagraphs: document.paragraphs.map(p => p.content),
+            existingCells: document.cells.map(p => p.content),
             structure: document.structure,
           } : null,
           insertAfterIndex: insertAtIndex,
@@ -1269,7 +1748,7 @@ export default function EditorPage() {
       const data = await res.json();
 
       // Parse generated content into paragraphs
-      const generatedParagraphs = data.content
+      const generatedCells = data.content
         .split(/\n\s*\n/)
         .map((p: string) => p.trim())
         .filter((p: string) => p.length > 0);
@@ -1279,7 +1758,7 @@ export default function EditorPage() {
         const newDoc: Document = {
           id: `doc-${Date.now()}`,
           title: data.suggestedTitle || 'Generated Document',
-          paragraphs: generatedParagraphs.map((content: string, index: number) => ({
+          cells: generatedCells.map((content: string, index: number) => ({
             id: `para-${Date.now()}-${index}`,
             index,
             content,
@@ -1288,7 +1767,7 @@ export default function EditorPage() {
         setDocument(newDoc);
 
         // Analyze structure in background
-        const structure = await analyzeDocument(generatedParagraphs);
+        const structure = await analyzeDocument(generatedCells);
         if (structure) {
           setDocument((prev) => prev ? { ...prev, structure, title: structure.title || prev.title } : null);
         }
@@ -1297,26 +1776,26 @@ export default function EditorPage() {
         setDocument((prev) => {
           if (!prev) return null;
 
-          const newParagraphs = [...prev.paragraphs];
+          const newCells = [...prev.cells];
           const insertPosition = insertAtIndex === null
-            ? newParagraphs.length
+            ? newCells.length
             : insertAtIndex + 1;
 
           // Insert generated paragraphs
-          const paragraphsToInsert = generatedParagraphs.map((content: string, i: number) => ({
+          const cellsToInsert = generatedCells.map((content: string, i: number) => ({
             id: `para-${Date.now()}-${i}`,
             index: 0,
             content,
           }));
 
-          newParagraphs.splice(insertPosition, 0, ...paragraphsToInsert);
+          newCells.splice(insertPosition, 0, ...cellsToInsert);
 
           // Recalculate indices
-          newParagraphs.forEach((p, i) => {
+          newCells.forEach((p, i) => {
             p.index = i;
           });
 
-          return { ...prev, paragraphs: newParagraphs };
+          return { ...prev, cells: newCells };
         });
       }
 
@@ -1507,6 +1986,51 @@ export default function EditorPage() {
                   </button>
                 </div>
 
+                {/* Edit Panel Toggle */}
+                <button
+                  onClick={() => {
+                    const newState = !showFeedbackPanel;
+                    setShowFeedbackPanel(newState);
+                    // Default to Vibe Edit when opening via button (unless cells are selected)
+                    if (newState && selectedCells.size === 0) {
+                      setEditMode('vibe');
+                    } else if (newState && selectedCells.size > 0) {
+                      setEditMode('styler');
+                    }
+                  }}
+                  className={`p-2 rounded-lg border ${
+                    showFeedbackPanel
+                      ? 'border-purple-500 bg-purple-50 text-purple-600'
+                      : 'border-[var(--border)] hover:bg-[var(--muted)]'
+                  }`}
+                  title="Edit Panel (Vibe/Styler)"
+                >
+                  ✨
+                </button>
+
+                {/* Doc Profile */}
+                <button
+                  onClick={() => setShowDocProfile(!showDocProfile)}
+                  className={`p-2 rounded-lg border ${
+                    showDocProfile
+                      ? 'border-indigo-500 bg-indigo-50 text-indigo-600'
+                      : 'border-[var(--border)] hover:bg-[var(--muted)]'
+                  }`}
+                  title="Document Profile"
+                >
+                  📋
+                </button>
+
+                {/* Save/Export */}
+                <button
+                  onClick={handleExportDocument}
+                  disabled={isExporting}
+                  className="p-2 rounded-lg border border-[var(--border)] hover:bg-[var(--muted)] disabled:opacity-50"
+                  title="Save"
+                >
+                  💾
+                </button>
+
                 {/* History */}
                 <button
                   onClick={() => setShowHistory(!showHistory)}
@@ -1518,42 +2042,6 @@ export default function EditorPage() {
                   title={`History${history && history.snapshots.length > 0 ? ` (${history.snapshots.length})` : ''}`}
                 >
                   📜
-                </button>
-
-                {/* Doc Profile */}
-                <button
-                  onClick={() => setShowDocProfile(!showDocProfile)}
-                  className={`p-2 rounded-lg border ${
-                    showDocProfile
-                      ? 'border-purple-500 bg-purple-50 text-purple-600'
-                      : 'border-[var(--border)] hover:bg-[var(--muted)]'
-                  }`}
-                  title="Document Profile"
-                >
-                  📋
-                </button>
-
-                {/* Document Review/Feedback */}
-                <button
-                  onClick={() => setShowFeedbackPanel(!showFeedbackPanel)}
-                  className={`p-2 rounded-lg border ${
-                    showFeedbackPanel
-                      ? 'border-blue-500 bg-blue-50 text-blue-600'
-                      : 'border-[var(--border)] hover:bg-[var(--muted)]'
-                  }`}
-                  title="Get Document Feedback"
-                >
-                  💬
-                </button>
-
-                {/* Export */}
-                <button
-                  onClick={handleExportDocument}
-                  disabled={isExporting}
-                  className="p-2 rounded-lg border border-[var(--border)] hover:bg-[var(--muted)] disabled:opacity-50"
-                  title="Export"
-                >
-                  📤
                 </button>
 
                 {/* Close document */}
@@ -1604,7 +2092,7 @@ export default function EditorPage() {
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium truncate">{doc.title}</p>
                           <p className="text-xs text-[var(--muted-foreground)]">
-                            {doc.paragraphCount} paragraphs
+                            {doc.cellCount} cells
                           </p>
                           <p className="text-xs text-[var(--muted-foreground)]">
                             {formatTimestamp(doc.updatedAt)}
@@ -1723,34 +2211,22 @@ export default function EditorPage() {
                   )}
                   {document.structure && (
                     <p className="text-sm text-[var(--muted-foreground)]">
-                      {document.structure.documentType} • {document.paragraphs.length} paragraphs • {document.structure.sections.length} sections
+                      {document.structure.documentType} • {document.cells.length} cells • {document.structure.sections.length} sections
                     </p>
                   )}
                 </div>
-                <button
-                  onClick={handleClearDocument}
-                  className="text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-                >
-                  Load Different Document
-                </button>
               </div>
 
               {/* Insert button at the start */}
-              {document.paragraphs.length === 0 ? (
+              {document.cells.length === 0 ? (
                 <div className="flex flex-col items-center gap-4 py-8">
                   <p className="text-[var(--muted-foreground)]">No content yet.</p>
                   <div className="flex gap-2">
                     <button
-                      onClick={() => handleInsertHeading(null)}
+                      onClick={() => handleInsertCell(null)}
                       className="px-4 py-2 border border-[var(--border)] rounded-lg hover:bg-[var(--muted)] text-sm"
                     >
-                      + Add Section Title
-                    </button>
-                    <button
-                      onClick={() => handleInsertParagraph(null)}
-                      className="px-4 py-2 border border-[var(--border)] rounded-lg hover:bg-[var(--muted)] text-sm"
-                    >
-                      + Add Paragraph
+                      + Add Cell
                     </button>
                     <button
                       onClick={() => {
@@ -1764,34 +2240,31 @@ export default function EditorPage() {
                   </div>
                 </div>
               ) : (
-                <div className="flex justify-center gap-2 py-2 group">
+                <div className="flex justify-center py-2 group">
                   <button
-                    onClick={() => handleInsertHeading(null)}
+                    onClick={() => handleInsertCell(null)}
                     className="opacity-0 group-hover:opacity-100 transition-opacity px-3 py-1 text-xs border border-dashed border-[var(--border)] rounded-full hover:bg-[var(--muted)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-                    title="Insert section title at the beginning"
+                    title="Insert cell at the beginning"
                   >
-                    + Section
-                  </button>
-                  <button
-                    onClick={() => handleInsertParagraph(null)}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity px-3 py-1 text-xs border border-dashed border-[var(--border)] rounded-full hover:bg-[var(--muted)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-                    title="Insert paragraph at the beginning"
-                  >
-                    + Paragraph
+                    + Cell
                   </button>
                 </div>
               )}
 
-              {document.paragraphs.map((para, index) => {
+              {document.cells.map((para, index) => {
                 const isSearchMatch = searchResults.includes(index);
                 const isCurrentSearchMatch = searchResults[currentSearchIndex] === index;
                 return (
-                  <div key={para.id} id={`para-${index}`}>
+                  <div key={para.id} id={`cell-${index}`}>
                     <div
                       data-para-index={index}
                       className={`relative group ${
-                        selectedParagraphs.has(index)
+                        selectedCells.has(index)
                           ? 'ring-2 ring-[var(--primary)] rounded-lg'
+                          : ''
+                      } ${
+                        reviewHighlightedCells.has(index)
+                          ? 'ring-2 ring-purple-500 bg-purple-50 dark:bg-purple-900/20 rounded-lg'
                           : ''
                       } ${
                         isCurrentSearchMatch
@@ -1820,7 +2293,7 @@ export default function EditorPage() {
                         </span>
                       </div>
 
-                      {/* Show diff if edited, direct edit mode, or normal content */}
+                      {/* Show diff if edited, batch edit status, direct edit mode, or normal content */}
                       {para.edited ? (
                         <div className="space-y-2">
                           {/* Show critique badge, iterations, and batch edit indicator */}
@@ -1848,7 +2321,7 @@ export default function EditorPage() {
                             )}
                             {para.originalBatchContent && (
                               <span className="text-blue-700 dark:text-blue-300 text-xs">
-                                Multi-paragraph edit
+                                Multi-cell edit
                               </span>
                             )}
                           </div>
@@ -1870,13 +2343,56 @@ export default function EditorPage() {
                             />
                           )}
                         </div>
-                      ) : editingParagraphIndex === index ? (
+                      ) : para.batchEditStatus === 'removed' ? (
+                        /* Cell marked for removal - red with strikethrough */
+                        <div className="p-4 bg-red-50 dark:bg-red-900/20 rounded-lg border-2 border-red-300 dark:border-red-800">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="px-2 py-0.5 bg-red-200 text-red-800 text-xs rounded font-medium">
+                              Will be removed
+                            </span>
+                          </div>
+                          <div className="line-through text-red-700 dark:text-red-300 opacity-70">
+                            <SyntaxHighlighter content={para.content} mode={editorMode} />
+                          </div>
+                        </div>
+                      ) : para.batchEditStatus === 'modified' && para.batchEditContent && !para.edited ? (
+                        /* Cell with modifications (not the main diff cell) */
+                        <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border-2 border-yellow-300 dark:border-yellow-800">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="px-2 py-0.5 bg-yellow-200 text-yellow-800 text-xs rounded font-medium">
+                              Modified
+                            </span>
+                          </div>
+                          <div className="space-y-2">
+                            <div className="text-xs text-[var(--muted-foreground)] font-medium">Original:</div>
+                            <div className="p-2 bg-red-50 dark:bg-red-900/10 rounded text-sm line-through opacity-70">
+                              {para.content.slice(0, 200)}{para.content.length > 200 ? '...' : ''}
+                            </div>
+                            <div className="text-xs text-[var(--muted-foreground)] font-medium">New:</div>
+                            <div className="p-2 bg-green-50 dark:bg-green-900/10 rounded text-sm">
+                              {para.batchEditContent.slice(0, 200)}{para.batchEditContent.length > 200 ? '...' : ''}
+                            </div>
+                          </div>
+                        </div>
+                      ) : para.batchEditStatus === 'unchanged' ? (
+                        /* Cell unchanged in batch edit */
+                        <div className="p-4 bg-gray-50 dark:bg-gray-800/30 rounded-lg border border-gray-200 dark:border-gray-700 opacity-60">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="px-2 py-0.5 bg-gray-200 text-gray-600 text-xs rounded">
+                              Unchanged
+                            </span>
+                          </div>
+                          <div className="leading-relaxed">
+                            <SyntaxHighlighter content={para.content} mode={editorMode} />
+                          </div>
+                        </div>
+                      ) : editingCellIndex === index ? (
                         <div className="p-2">
                           {editorMode === 'plain' ? (
                             <textarea
-                              value={editingParagraphContent}
+                              value={editingCellContent}
                               onChange={(e) => {
-                                setEditingParagraphContent(e.target.value);
+                                setEditingCellContent(e.target.value);
                                 e.target.style.height = 'auto';
                                 e.target.style.height = e.target.scrollHeight + 'px';
                               }}
@@ -1889,7 +2405,7 @@ export default function EditorPage() {
                                   el.style.height = 'auto';
                                   el.style.height = Math.max(el.scrollHeight, 150) + 'px';
                                   el.focus();
-                                  if (editingParagraphContent === 'New paragraph...' || editingParagraphContent === 'New Section') {
+                                  if (editingCellContent === 'New cell...' || editingCellContent === 'New Section') {
                                     el.select();
                                   }
                                 }
@@ -1907,8 +2423,8 @@ export default function EditorPage() {
                               }}
                             >
                               <CodeMirrorEditor
-                                value={editingParagraphContent}
-                                onChange={setEditingParagraphContent}
+                                value={editingCellContent}
+                                onChange={setEditingCellContent}
                                 mode={editorMode}
                                 darkMode={darkMode === 'dark' || (darkMode === 'system' && typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches)}
                                 minHeight="150px"
@@ -1938,16 +2454,16 @@ export default function EditorPage() {
                         </div>
                       ) : (
                         <div
-                          onClick={(e) => handleParagraphClick(index, e)}
+                          onClick={(e) => handleCellClick(index, e)}
                           onDoubleClick={() => {
-                            setEditingParagraphIndex(index);
-                            setEditingParagraphContent(para.content);
+                            setEditingCellIndex(index);
+                            setEditingCellContent(para.content);
                             clearSelection();
                           }}
                           className={`rounded-lg cursor-pointer transition-colors ${
                             para.type === 'heading' ? 'py-2 px-4' : 'p-4'
                           } ${
-                            selectedParagraphs.has(index)
+                            selectedCells.has(index)
                               ? 'bg-[var(--primary)]/5'
                               : 'hover:bg-[var(--muted)]'
                           }`}
@@ -1966,21 +2482,35 @@ export default function EditorPage() {
                       )}
                     </div>
 
-                    {/* Insert button after each paragraph */}
-                    <div className="flex justify-center gap-2 py-1 group">
+                    {/* Show new cells that will be added in this batch */}
+                    {para.batchNewCells && para.batchNewCells.length > 0 && (
+                      <div className="space-y-2 my-2">
+                        {para.batchNewCells.map((newContent, newIdx) => (
+                          <div
+                            key={`new-${index}-${newIdx}`}
+                            className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border-2 border-green-300 dark:border-green-800"
+                          >
+                            <div className="flex items-center gap-2 mb-2">
+                              <span className="px-2 py-0.5 bg-green-200 text-green-800 text-xs rounded font-medium">
+                                + New cell
+                              </span>
+                            </div>
+                            <div className="text-green-800 dark:text-green-200 leading-relaxed">
+                              <SyntaxHighlighter content={newContent} mode={editorMode} />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Insert button after each cell */}
+                    <div className="flex justify-center py-1 group">
                       <button
-                        onClick={() => handleInsertHeading(index)}
+                        onClick={() => handleInsertCell(index)}
                         className="opacity-0 group-hover:opacity-100 transition-opacity px-3 py-1 text-xs border border-dashed border-[var(--border)] rounded-full hover:bg-[var(--muted)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-                        title={`Insert section title after item ${index + 1}`}
+                        title={`Insert cell after item ${index + 1}`}
                       >
-                        + Section
-                      </button>
-                      <button
-                        onClick={() => handleInsertParagraph(index)}
-                        className="opacity-0 group-hover:opacity-100 transition-opacity px-3 py-1 text-xs border border-dashed border-[var(--border)] rounded-full hover:bg-[var(--muted)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-                        title={`Insert paragraph after item ${index + 1}`}
-                      >
-                        + Paragraph
+                        + Cell
                       </button>
                     </div>
                   </div>
@@ -1988,11 +2518,11 @@ export default function EditorPage() {
               })}
 
               {/* AI Generate button at bottom */}
-              {document.paragraphs.length > 0 && (
+              {document.cells.length > 0 && (
                 <div className="flex justify-center py-4">
                   <button
                     onClick={() => {
-                      setInsertAtIndex(document.paragraphs.length - 1);
+                      setInsertAtIndex(document.cells.length - 1);
                       setShowAIGenerate(true);
                     }}
                     className="px-4 py-2 border border-[var(--primary)] text-[var(--primary)] rounded-lg hover:bg-[var(--primary)]/10 text-sm"
@@ -2005,131 +2535,6 @@ export default function EditorPage() {
           )}
         </main>
 
-        {/* Edit panel */}
-        {document && selectedParagraphs.size > 0 && (
-          <aside className="w-96 border-l border-[var(--border)] bg-[var(--muted)]/30 flex flex-col overflow-hidden">
-            <div className="flex-1 overflow-y-auto p-6">
-              {(() => {
-                const selectedIndices = Array.from(selectedParagraphs).sort((a, b) => a - b);
-                const isMultiple = selectedIndices.length > 1;
-                return (
-                  <>
-                    <h3 className="font-medium mb-4">
-                      {isMultiple
-                        ? `Edit ${selectedIndices.length} Paragraphs`
-                        : `Edit Paragraph ${selectedIndices[0] + 1}`}
-                    </h3>
-
-                    {/* Show selected paragraphs info */}
-                    {isMultiple && (
-                      <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-sm">
-                        <p className="font-medium text-blue-700 dark:text-blue-300">
-                          Multi-paragraph edit
-                        </p>
-                        <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-                          Paragraphs {selectedIndices.map(i => i + 1).join(', ')} selected.
-                          The AI will improve flow, merge ideas, or reorganize as needed.
-                        </p>
-                      </div>
-                    )}
-
-                    <div className="space-y-4">
-                      <div>
-                        <label className="block text-sm font-medium mb-2">
-                          Edit Instruction
-                        </label>
-                        <textarea
-                          value={editInstruction}
-                          onChange={(e) => setEditInstruction(e.target.value)}
-                          placeholder={isMultiple
-                            ? "e.g., Improve transitions, merge these ideas, make more cohesive..."
-                            : "e.g., Make it more concise, fix grammar, improve clarity..."
-                          }
-                          className="w-full h-24 p-3 border border-[var(--border)] rounded-lg bg-[var(--background)] resize-none text-sm"
-                        />
-                        {/* Quick templates - different for single vs multiple paragraphs */}
-                        <div className="flex flex-wrap gap-1 mt-2">
-                          {(isMultiple ? [
-                            'Make concise',
-                            'Improve clarity',
-                            'Improve logical flow',
-                            'Strengthen transitions',
-                            'Merge ideas',
-                            'Reduce redundancy',
-                          ] : [
-                            'Make concise',
-                            'Fix grammar',
-                            'Improve clarity',
-                            'Add hedging',
-                            'More formal',
-                            'Simplify',
-                          ]).map((template) => (
-                            <button
-                              key={template}
-                              onClick={() => setEditInstruction(template)}
-                              className="px-2 py-0.5 text-xs border border-[var(--border)] rounded hover:bg-[var(--muted)]"
-                            >
-                              {template}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div className="text-xs text-[var(--muted-foreground)]">
-                        <p className="mb-2">The system will consider:</p>
-                        <ul className="list-disc list-inside space-y-1">
-                          <li>Your writing style preferences</li>
-                          <li>Document structure and section type</li>
-                          <li>Surrounding paragraphs for context</li>
-                          <li>Defined terms and acronyms</li>
-                          {activeProfile && (
-                            <li>
-                              Audience: {profiles.find((p) => p.id === activeProfile)?.name}
-                            </li>
-                          )}
-                        </ul>
-                      </div>
-
-                      <button
-                        onClick={handleRequestEdit}
-                        disabled={isLoading}
-                        className="w-full py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-lg hover:opacity-90 disabled:opacity-50"
-                      >
-                        {isLoading ? 'Getting suggestion...' : (isMultiple ? 'Improve Flow' : 'Get Edit Suggestion')}
-                      </button>
-
-                      {/* Agent Visualization Toggle */}
-                      <label className="flex items-center gap-2 text-sm cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={showAgentViz}
-                          onChange={(e) => setShowAgentViz(e.target.checked)}
-                          className="rounded border-[var(--border)]"
-                        />
-                        <span className="text-[var(--muted-foreground)]">Show agent activity</span>
-                      </label>
-
-                      {/* Agent Visualization */}
-                      {showAgentViz && (
-                        <AgentVisualization
-                          isActive={isLoading}
-                          maxIterations={3}
-                        />
-                      )}
-
-                      <button
-                        onClick={clearSelection}
-                        className="w-full py-2 border border-[var(--border)] rounded-lg hover:bg-[var(--muted)]"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </>
-                );
-              })()}
-            </div>
-          </aside>
-        )}
 
         {/* History panel */}
         {document && showHistory && (
@@ -2154,8 +2559,8 @@ export default function EditorPage() {
               const v1 = history.snapshots.find(s => s.id === compareVersions[0]);
               const v2 = history.snapshots.find(s => s.id === compareVersions[1]);
               if (!v1 || !v2) return null;
-              const text1 = v1.paragraphs.map(p => p.content).join('\n\n');
-              const text2 = v2.paragraphs.map(p => p.content).join('\n\n');
+              const text1 = v1.cells.map(p => p.content).join('\n\n');
+              const text2 = v2.cells.map(p => p.content).join('\n\n');
               return (
                 <div className="p-3 border-b border-[var(--border)] bg-yellow-50 dark:bg-yellow-900/20">
                   <div className="flex items-center justify-between mb-2">
@@ -2171,12 +2576,12 @@ export default function EditorPage() {
                     <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded">
                       <strong>Older:</strong> {v1.changeDescription}
                       <br />
-                      <span className="text-[var(--muted-foreground)]">{v1.paragraphs.length} paragraphs</span>
+                      <span className="text-[var(--muted-foreground)]">{v1.cells.length} cells</span>
                     </div>
                     <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded">
                       <strong>Newer:</strong> {v2.changeDescription}
                       <br />
-                      <span className="text-[var(--muted-foreground)]">{v2.paragraphs.length} paragraphs</span>
+                      <span className="text-[var(--muted-foreground)]">{v2.cells.length} cells</span>
                     </div>
                     <div className="p-2 bg-[var(--background)] rounded border border-[var(--border)]">
                       <strong>Diff:</strong>
@@ -2185,8 +2590,8 @@ export default function EditorPage() {
                         <span className="text-[var(--muted-foreground)]">No differences</span>
                       ) : (
                         <span>
-                          {Math.abs(v2.paragraphs.length - v1.paragraphs.length) > 0 && (
-                            <span className="block">Paragraphs: {v1.paragraphs.length} → {v2.paragraphs.length}</span>
+                          {Math.abs(v2.cells.length - v1.cells.length) > 0 && (
+                            <span className="block">Paragraphs: {v1.cells.length} → {v2.cells.length}</span>
                           )}
                           <span className="block">Words: {text1.split(/\s+/).length} → {text2.split(/\s+/).length}</span>
                         </span>
@@ -2227,7 +2632,7 @@ export default function EditorPage() {
                               {formatTimestamp(snapshot.timestamp)}
                             </p>
                             <p className="text-xs text-[var(--muted-foreground)]">
-                              {snapshot.paragraphs.length} paragraphs
+                              {snapshot.cells.length} cells
                             </p>
                           </div>
                           <button
@@ -2257,7 +2662,294 @@ export default function EditorPage() {
           </aside>
         )}
 
-        {/* Document Profile Panel */}
+        {/* Unified Edit Panel with Tabs */}
+        {document && showFeedbackPanel && (
+          <aside className="w-96 border-l border-[var(--border)] bg-[var(--background)] flex flex-col overflow-hidden">
+            {/* Header with Tabs */}
+            <div className="border-b border-[var(--border)]">
+              <div className="flex items-center justify-between p-3 pb-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">✨</span>
+                  <h3 className="font-semibold">Edit</h3>
+                </div>
+                <button
+                  onClick={() => setShowFeedbackPanel(false)}
+                  className="text-xl leading-none hover:text-[var(--foreground)] text-[var(--muted-foreground)]"
+                >
+                  ×
+                </button>
+              </div>
+              {/* Tab Buttons */}
+              <div className="flex px-3 mt-2">
+                <button
+                  onClick={() => setEditMode('styler')}
+                  className={`flex-1 py-2 text-sm font-medium border-b-2 transition-colors ${
+                    editMode === 'styler'
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-[var(--muted-foreground)] hover:text-[var(--foreground)]'
+                  }`}
+                >
+                  🎨 Styler Edit
+                </button>
+                <button
+                  onClick={() => {
+                    setEditMode('vibe');
+                    // Don't clear selection - user might want to switch back
+                  }}
+                  className={`flex-1 py-2 text-sm font-medium border-b-2 transition-colors ${
+                    editMode === 'vibe'
+                      ? 'border-purple-500 text-purple-600'
+                      : 'border-transparent text-[var(--muted-foreground)] hover:text-[var(--foreground)]'
+                  }`}
+                >
+                  ✨ Vibe Edit
+                </button>
+              </div>
+            </div>
+
+            {/* Tab Content */}
+            <div className="flex-1 overflow-y-auto">
+              {editMode === 'vibe' ? (
+                /* Vibe Edit Content */
+                <FeedbackPanel
+                  cells={document.cells.map(p => p.content)}
+                  selectedIndices={Array.from(selectedCells)}
+                  activeProfileName={profiles.find(p => p.id === activeProfile)?.name}
+                  isLoading={isLoading}
+                  documentStructure={document.structure}
+                  savedState={feedbackStates[document.id]}
+                  onStateChange={(state) => setFeedbackStates(prev => ({ ...prev, [document.id]: state }))}
+                  onClose={() => setShowFeedbackPanel(false)}
+                  onRequestEdit={(cellIndices, instruction) => {
+                    setReviewHighlightedCells(new Set(cellIndices));
+                    handleRequestEditDirect(cellIndices, instruction);
+                    setTimeout(() => {
+                      const firstIndex = Math.min(...cellIndices);
+                      const element = window.document.getElementById(`cell-${firstIndex}`);
+                      if (element) {
+                        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                      }
+                    }, 100);
+                  }}
+                  hideHeader={true}
+                  onStop={handleStopEdit}
+                />
+              ) : (
+                /* Styler Edit Content */
+                <div className="p-4 space-y-4">
+                  {selectedCells.size === 0 ? (
+                    <div className="text-center py-8 text-[var(--muted-foreground)]">
+                      <p className="text-sm">Click on a cell to select it for editing.</p>
+                      <p className="text-xs mt-2">Use Shift+click for ranges or Cmd/Ctrl+click for multiple.</p>
+                    </div>
+                  ) : (() => {
+                    const selectedIndices = Array.from(selectedCells).sort((a, b) => a - b);
+                    const isMultiple = selectedIndices.length > 1;
+                    const STYLER_TEMPLATES_SINGLE = ['Make concise', 'Fix grammar', 'Improve clarity', 'Add hedging', 'More formal', 'Simplify'];
+                    const STYLER_TEMPLATES_MULTI = ['Make concise', 'Improve clarity', 'Improve logical flow', 'Strengthen transitions', 'Merge ideas', 'Reduce redundancy'];
+                    const templates = isMultiple ? STYLER_TEMPLATES_MULTI : STYLER_TEMPLATES_SINGLE;
+
+                    // Build instruction from selected templates + custom instruction
+                    const buildStylerInstruction = () => {
+                      const parts = [...selectedStylerTemplates];
+                      if (editInstruction.trim()) {
+                        parts.push(editInstruction.trim());
+                      }
+                      // Default instruction when nothing selected - apply style preferences
+                      if (parts.length === 0) {
+                        return 'Improve this text according to my style preferences';
+                      }
+                      return parts.join('. ');
+                    };
+
+                    const handleStylerEdit = () => {
+                      const instruction = buildStylerInstruction();
+                      setEditInstruction(instruction);
+                      handleRequestEdit();
+                    };
+
+                    return (
+                      <>
+                        <div className="text-sm text-[var(--muted-foreground)]">
+                          {isMultiple
+                            ? `${selectedIndices.length} cells selected`
+                            : `Cell ${selectedIndices[0] + 1} selected`}
+                        </div>
+
+                        {isMultiple && (
+                          <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-sm">
+                            <p className="font-medium text-blue-700 dark:text-blue-300">Multi-cell edit</p>
+                            <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                              Cells {selectedIndices.map(i => i + 1).join(', ')} selected.
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Quick Templates - Multi-select */}
+                        <div>
+                          <label className="block text-xs font-medium mb-2">
+                            Quick Styles <span className="font-normal text-[var(--muted-foreground)]">(select multiple)</span>
+                          </label>
+                          <div className="flex flex-wrap gap-2">
+                            {templates.map((template) => {
+                              const isSelected = selectedStylerTemplates.includes(template);
+                              return (
+                                <button
+                                  key={template}
+                                  onClick={() => {
+                                    setSelectedStylerTemplates(prev =>
+                                      prev.includes(template)
+                                        ? prev.filter(t => t !== template)
+                                        : [...prev, template]
+                                    );
+                                  }}
+                                  disabled={isLoading}
+                                  className={`px-3 py-1.5 text-xs rounded-full border transition-colors disabled:opacity-50 ${
+                                    isSelected
+                                      ? 'border-blue-500 bg-blue-100 text-blue-700'
+                                      : 'border-[var(--border)] hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700'
+                                  }`}
+                                >
+                                  {isSelected && <span className="mr-1">✓</span>}
+                                  {template}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* Custom Instruction */}
+                        <div>
+                          <div className="flex items-center justify-between mb-2">
+                            <label className="text-xs font-medium">Custom Instruction</label>
+                            {editInstruction && (
+                              <button
+                                onClick={() => setEditInstruction('')}
+                                className="text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] flex items-center gap-1"
+                                title="Clear instruction"
+                              >
+                                <span>×</span> Clear
+                              </button>
+                            )}
+                          </div>
+                          <textarea
+                            value={editInstruction}
+                            onChange={(e) => setEditInstruction(e.target.value)}
+                            placeholder={isMultiple
+                              ? "e.g., Improve transitions, merge these ideas..."
+                              : "e.g., Make it more concise, fix grammar..."
+                            }
+                            className="w-full h-20 p-3 border border-[var(--border)] rounded-lg bg-[var(--background)] resize-none text-sm"
+                          />
+                        </div>
+
+                        {/* Main Action Button + Stop Button */}
+                        <div className="flex gap-2">
+                          <button
+                            onClick={handleStylerEdit}
+                            disabled={isLoading}
+                            className="flex-1 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium flex flex-col items-center justify-center gap-1"
+                          >
+                            {isLoading ? (
+                              <div className="flex items-center gap-2">
+                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                Styling...
+                              </div>
+                            ) : (
+                              <>
+                                <div className="flex items-center gap-2">
+                                  🎨 {isMultiple ? 'Improve Flow' : 'Style It'}
+                                  <span className="text-blue-200 text-sm">({selectedIndices.length} {selectedIndices.length === 1 ? 'cell' : 'cells'})</span>
+                                </div>
+                                {(selectedStylerTemplates.length > 0 || editInstruction.trim()) ? (
+                                  <span className="text-blue-200 text-xs">
+                                    {selectedStylerTemplates.length > 0 && selectedStylerTemplates.join(' + ')}
+                                    {selectedStylerTemplates.length > 0 && editInstruction.trim() && ' + '}
+                                    {editInstruction.trim() && 'custom'}
+                                  </span>
+                                ) : (
+                                  <span className="text-blue-200 text-xs">Apply style preferences</span>
+                                )}
+                              </>
+                            )}
+                          </button>
+                          {isLoading && (
+                            <button
+                              onClick={handleStopEdit}
+                              className="px-4 py-3 bg-red-500 text-white rounded-lg hover:bg-red-600 font-medium"
+                              title="Stop"
+                            >
+                              ◼
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Agent Visualization Toggle */}
+                        {/* Cell Actions */}
+                        {(() => {
+                          // Check if selected cell can be split (has newlines)
+                          const canSplit = !isMultiple &&
+                            document.cells[selectedIndices[0]]?.content?.includes('\n');
+                          const canMerge = isMultiple;
+
+                          return (
+                            <div className="border-t border-[var(--border)] pt-4">
+                              <p className="text-xs text-[var(--muted-foreground)] mb-2">Cell Actions:</p>
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => handleSplitCell(selectedIndices[0], 'newlines')}
+                                  disabled={!canSplit}
+                                  className="flex-1 py-1.5 text-xs border border-[var(--border)] rounded-lg hover:bg-[var(--muted)] disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
+                                  title={canSplit ? 'Split cell by line breaks' : 'Cell has no line breaks to split'}
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                                  </svg>
+                                  Split
+                                </button>
+                                <button
+                                  onClick={handleMergeCells}
+                                  disabled={!canMerge}
+                                  className="flex-1 py-1.5 text-xs border border-[var(--border)] rounded-lg hover:bg-[var(--muted)] disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
+                                  title={canMerge ? 'Merge selected cells into one' : 'Select multiple cells to merge'}
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16m-7 6h7" />
+                                  </svg>
+                                  Merge
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })()}
+
+                        {/* Delete */}
+                        <button
+                          onClick={() => isMultiple ? handleDeleteSelected() : handleDeleteBlock(selectedIndices[0])}
+                          className="w-full py-2 text-sm border border-red-300 text-red-600 rounded-lg hover:bg-red-50 flex items-center justify-center gap-2"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                          {isMultiple ? `Delete ${selectedIndices.length} Cells` : 'Delete Cell'}
+                        </button>
+
+                        <button
+                          onClick={clearSelection}
+                          className="w-full py-2 border border-[var(--border)] rounded-lg hover:bg-[var(--muted)] text-sm"
+                        >
+                          Clear Selection
+                        </button>
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
+            </div>
+          </aside>
+        )}
+
+        {/* Document Profile Panel - appears to the right of Edit Panel */}
         {document && showDocProfile && (
           <aside className="w-80 border-l border-[var(--border)] bg-[var(--background)] flex flex-col overflow-hidden">
             <DocumentProfilePanel
@@ -2265,37 +2957,6 @@ export default function EditorPage() {
               baseProfileName={profiles.find(p => p.id === activeProfile)?.name}
               profiles={profiles}
               onClose={() => setShowDocProfile(false)}
-            />
-          </aside>
-        )}
-
-        {/* Feedback/Review Panel */}
-        {document && showFeedbackPanel && (
-          <aside className="w-96 border-l border-[var(--border)] bg-[var(--background)] flex flex-col overflow-hidden">
-            <FeedbackPanel
-              paragraphs={document.paragraphs.map(p => p.content)}
-              selectedIndices={Array.from(selectedParagraphs)}
-              documentStructure={document.structure}
-              savedState={feedbackStates[document.id]}
-              onStateChange={(state) => setFeedbackStates(prev => ({ ...prev, [document.id]: state }))}
-              onClose={() => setShowFeedbackPanel(false)}
-              onScrollToParagraph={(index) => {
-                // Scroll to paragraph and highlight it
-                const element = window.document.getElementById(`paragraph-${index}`);
-                if (element) {
-                  element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                  element.classList.add('ring-2', 'ring-blue-400');
-                  setTimeout(() => {
-                    element.classList.remove('ring-2', 'ring-blue-400');
-                  }, 2000);
-                }
-              }}
-              onRequestEdit={(paragraphIndices, instruction) => {
-                // Close feedback panel first to show the document
-                setShowFeedbackPanel(false);
-                // Request the edit directly (this handles selection, loading, and API call)
-                handleRequestEditDirect(paragraphIndices, instruction);
-              }}
             />
           </aside>
         )}
@@ -2324,12 +2985,12 @@ export default function EditorPage() {
             <div className="flex-1 overflow-y-auto p-6 space-y-4">
               {/* Context info */}
               <div className="p-3 bg-[var(--muted)]/50 rounded-lg text-sm">
-                {!document || document.paragraphs.length === 0 ? (
+                {!document || document.cells.length === 0 ? (
                   <p>Creating a new document from scratch.</p>
                 ) : insertAtIndex === null ? (
                   <p>Content will be added at the end of the document.</p>
                 ) : (
-                  <p>Content will be inserted after paragraph {insertAtIndex + 1}.</p>
+                  <p>Content will be inserted after cell {insertAtIndex + 1}.</p>
                 )}
                 {activeProfile && (
                   <p className="mt-1 text-[var(--muted-foreground)]">
@@ -2362,7 +3023,7 @@ export default function EditorPage() {
                     'Write a conclusion',
                     'Expand on the previous point',
                     'Add supporting evidence',
-                    'Create a transition paragraph',
+                    'Create a transition',
                   ].map((suggestion) => (
                     <button
                       key={suggestion}
@@ -2394,6 +3055,142 @@ export default function EditorPage() {
                 className="px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-lg hover:opacity-90 disabled:opacity-50 text-sm"
               >
                 {isGenerating ? 'Generating...' : 'Generate'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* New Document Modal */}
+      {showNewDocModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-[var(--background)] border border-[var(--border)] rounded-lg shadow-xl w-full max-w-xl mx-4 max-h-[80vh] overflow-hidden flex flex-col">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border)]">
+              <h2 className="text-lg font-semibold">New Document</h2>
+              <button
+                onClick={() => setShowNewDocModal(false)}
+                className="text-[var(--muted-foreground)] hover:text-[var(--foreground)] text-xl"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-5">
+              {/* Document Title */}
+              <div>
+                <label className="block text-sm font-medium mb-2">Document Title</label>
+                <input
+                  type="text"
+                  value={newDocTitle}
+                  onChange={(e) => setNewDocTitle(e.target.value)}
+                  placeholder="Untitled Document"
+                  className="w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm"
+                />
+              </div>
+
+              {/* Start Mode Selection */}
+              <div>
+                <label className="block text-sm font-medium mb-3">How would you like to start?</label>
+                <div className="space-y-2">
+                  {/* Blank Document */}
+                  <button
+                    onClick={() => setNewDocMode('blank')}
+                    className={`w-full p-4 text-left rounded-lg border-2 transition-colors ${
+                      newDocMode === 'blank'
+                        ? 'border-[var(--primary)] bg-[var(--primary)]/5'
+                        : 'border-[var(--border)] hover:border-[var(--primary)]/50'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">📝</span>
+                      <div>
+                        <p className="font-medium">Blank Document</p>
+                        <p className="text-sm text-[var(--muted-foreground)]">Start fresh with an empty document</p>
+                      </div>
+                    </div>
+                  </button>
+
+                  {/* Paste Content */}
+                  <button
+                    onClick={() => setNewDocMode('paste')}
+                    className={`w-full p-4 text-left rounded-lg border-2 transition-colors ${
+                      newDocMode === 'paste'
+                        ? 'border-[var(--primary)] bg-[var(--primary)]/5'
+                        : 'border-[var(--border)] hover:border-[var(--primary)]/50'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">📋</span>
+                      <div>
+                        <p className="font-medium">Paste Existing Text</p>
+                        <p className="text-sm text-[var(--muted-foreground)]">Import text you've already written</p>
+                      </div>
+                    </div>
+                  </button>
+
+                  {/* AI Generate */}
+                  <button
+                    onClick={() => setNewDocMode('generate')}
+                    className={`w-full p-4 text-left rounded-lg border-2 transition-colors ${
+                      newDocMode === 'generate'
+                        ? 'border-purple-500 bg-purple-50'
+                        : 'border-[var(--border)] hover:border-purple-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">✨</span>
+                      <div>
+                        <p className="font-medium">AI Generate</p>
+                        <p className="text-sm text-[var(--muted-foreground)]">Let AI help you draft content</p>
+                      </div>
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              {/* Paste Content Area (shown when paste mode selected) */}
+              {newDocMode === 'paste' && (
+                <div>
+                  <label className="block text-sm font-medium mb-2">Paste your content</label>
+                  <textarea
+                    value={pasteContent}
+                    onChange={(e) => setPasteContent(e.target.value)}
+                    placeholder="Paste your text here. Paragraphs will be split into separate cells..."
+                    className="w-full h-48 p-3 border border-[var(--border)] rounded-lg bg-[var(--background)] resize-none text-sm font-mono"
+                    autoFocus
+                  />
+                  {pasteContent && (
+                    <p className="mt-2 text-xs text-[var(--muted-foreground)]">
+                      {pasteContent.split(/\n\s*\n/).filter(p => p.trim()).length} paragraph(s) detected
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* AI Generate hint */}
+              {newDocMode === 'generate' && (
+                <div className="p-3 bg-purple-50 rounded-lg text-sm text-purple-700">
+                  <p>You'll be able to describe what you want to write, and AI will help generate a first draft aligned to your style profile.</p>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex justify-end gap-2 px-6 py-4 border-t border-[var(--border)] bg-[var(--muted)]/30">
+              <button
+                onClick={() => setShowNewDocModal(false)}
+                className="px-4 py-2 border border-[var(--border)] rounded-lg hover:bg-[var(--muted)] text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreateNewDocument}
+                disabled={newDocMode === 'paste' && !pasteContent.trim()}
+                className="px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-lg hover:opacity-90 disabled:opacity-50 text-sm"
+              >
+                {newDocMode === 'generate' ? 'Continue to AI Generate' : 'Create Document'}
               </button>
             </div>
           </div>

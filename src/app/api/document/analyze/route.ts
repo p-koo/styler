@@ -5,8 +5,8 @@ export interface DocumentSection {
   id: string;
   name: string;
   type: 'abstract' | 'introduction' | 'methods' | 'results' | 'discussion' | 'conclusion' | 'references' | 'acknowledgments' | 'other';
-  startParagraph: number;
-  endParagraph: number;
+  startCell: number;
+  endCell: number;
   purpose: string; // LLM's understanding of what this section does
 }
 
@@ -21,17 +21,17 @@ export interface DocumentStructure {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { paragraphs } = body as { paragraphs: string[] };
+    const { cells } = body as { cells: string[] };
 
-    if (!paragraphs || !Array.isArray(paragraphs) || paragraphs.length === 0) {
+    if (!cells || !Array.isArray(cells) || cells.length === 0) {
       return NextResponse.json(
-        { error: 'paragraphs array is required' },
+        { error: 'cells array is required' },
         { status: 400 }
       );
     }
 
-    // Format paragraphs with indices for the LLM
-    const numberedText = paragraphs
+    // Format cells with indices for the LLM
+    const numberedText = cells
       .map((p, i) => `[${i}] ${p.slice(0, 500)}${p.length > 500 ? '...' : ''}`)
       .join('\n\n');
 
@@ -51,8 +51,8 @@ Analyze and return a JSON object with this structure:
       "id": "section-id",
       "name": "Section Name",
       "type": "abstract" | "introduction" | "methods" | "results" | "discussion" | "conclusion" | "references" | "acknowledgments" | "other",
-      "startParagraph": 0,
-      "endParagraph": 2,
+      "startCell": 0,
+      "endCell": 2,
       "purpose": "what this section accomplishes in 1 sentence"
     }
   ]
@@ -60,7 +60,7 @@ Analyze and return a JSON object with this structure:
 
 RULES:
 - Paragraph indices are shown in [brackets] - use these exact numbers
-- startParagraph and endParagraph are inclusive
+- startCell and endCell are inclusive
 - Every paragraph must belong to exactly one section
 - Common academic sections: Abstract, Introduction, Background, Methods/Materials, Results, Discussion, Conclusion
 - For grants: Specific Aims, Significance, Innovation, Approach, etc.
@@ -90,16 +90,16 @@ RULES:
     const structure: DocumentStructure = JSON.parse(jsonMatch[0]);
 
     // Validate and fix section boundaries
-    const maxParagraph = paragraphs.length - 1;
+    const maxParagraph = cells.length - 1;
     structure.sections = structure.sections.map((section, index) => ({
       ...section,
       id: section.id || `section-${index}`,
-      startParagraph: Math.max(0, Math.min(section.startParagraph, maxParagraph)),
-      endParagraph: Math.max(0, Math.min(section.endParagraph, maxParagraph)),
+      startCell: Math.max(0, Math.min(section.startCell, maxParagraph)),
+      endCell: Math.max(0, Math.min(section.endCell, maxParagraph)),
     }));
 
     // Ensure sections are sorted and non-overlapping
-    structure.sections.sort((a, b) => a.startParagraph - b.startParagraph);
+    structure.sections.sort((a, b) => a.startCell - b.startCell);
 
     return NextResponse.json({
       success: true,

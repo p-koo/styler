@@ -16,11 +16,11 @@ async function ensureDir() {
 export interface SavedDocument {
   id: string;
   title: string;
-  paragraphs: Array<{
+  cells: Array<{
     id: string;
     index: number;
     content: string;
-    type?: 'paragraph' | 'heading';
+    type?: 'cell' | 'heading';
   }>;
   structure?: {
     title: string;
@@ -29,8 +29,8 @@ export interface SavedDocument {
       id: string;
       name: string;
       type: string;
-      startParagraph: number;
-      endParagraph: number;
+      startCell: number;
+      endCell: number;
       purpose: string;
     }>;
     keyTerms: string[];
@@ -54,7 +54,7 @@ export async function GET() {
     const documents: Array<{
       id: string;
       title: string;
-      paragraphCount: number;
+      cellCount: number;
       updatedAt: string;
     }> = [];
 
@@ -65,7 +65,7 @@ export async function GET() {
         documents.push({
           id: doc.id,
           title: doc.title,
-          paragraphCount: doc.paragraphs?.length || 0,
+          cellCount: doc.cells?.length || 0,
           updatedAt: doc.updatedAt || doc.createdAt,
         });
       } catch (e) {
@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
     await ensureDir();
 
     const body = await request.json();
-    const { id, title, paragraphs, structure, selectedProfileId } = body;
+    const { id, title, cells, structure, selectedProfileId } = body;
 
     if (!id || !title) {
       return NextResponse.json(
@@ -119,7 +119,7 @@ export async function POST(request: NextRequest) {
     const document: SavedDocument = {
       id,
       title,
-      paragraphs: paragraphs || [],
+      cells: cells || [],
       structure,
       selectedProfileId: selectedProfileId ?? null,
       createdAt,

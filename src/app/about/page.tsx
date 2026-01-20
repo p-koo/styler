@@ -180,7 +180,7 @@ export default function AboutPage() {
             <FlowStep
               number={1}
               title="You select text and request an edit"
-              description="Click paragraphs to select them. Optionally add an instruction like 'make more concise' or 'add hedging'."
+              description="Click cells to select them. Optionally add an instruction like 'make more concise' or 'add hedging'."
             />
             <FlowStep
               number={2}
@@ -215,8 +215,8 @@ export default function AboutPage() {
           <h2 className="text-2xl font-semibold text-[var(--foreground)] mb-4">Key Features</h2>
           <div className="grid md:grid-cols-2 gap-4">
             <FeatureCard
-              title="Document Review"
-              description="Get high-level feedback on clarity, structure, and flow. Apply suggestions directly as edits."
+              title="Vibe Edit"
+              description="Document-level analysis for clarity, structure, and flow. Apply intelligent suggestions directly."
             />
             <FeatureCard
               title="Syntax Highlighting"

@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { loadPreferences } from '@/memory/preference-store';
-import { orchestrateEdit } from '@/agents/orchestrator-agent';
+import { orchestrateEdit, type SyntaxMode } from '@/agents/orchestrator-agent';
 import { convertToGenAlpha } from '@/agents/gen-alpha-agent';
 import type { DocumentStructure } from '../analyze/route';
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { cells, cellIndex, instruction, profileId, documentStructure, model, documentId } = body as {
+    const { cells, cellIndex, instruction, profileId, documentStructure, model, documentId, syntaxMode } = body as {
       cells: string[];
       cellIndex: number;
       instruction?: string;
@@ -15,6 +15,7 @@ export async function POST(request: NextRequest) {
       documentStructure?: DocumentStructure;
       model?: string;
       documentId?: string;
+      syntaxMode?: SyntaxMode;
     };
 
     if (!cells || typeof cellIndex !== 'number') {
@@ -55,6 +56,7 @@ export async function POST(request: NextRequest) {
       instruction,
       profileId,
       documentId,
+      syntaxMode,
       documentStructure,
       model,
       baseStyle: store.baseStyle,

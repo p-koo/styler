@@ -22,6 +22,7 @@ import {
   type DocumentSnapshot,
   type DocumentHistory,
 } from '@/memory/document-history';
+import { smartSplit, reorganizeCells, type SyntaxMode } from '@/utils/smart-split';
 
 interface DocumentSection {
   id: string;
@@ -156,6 +157,7 @@ export default function EditorPage() {
   const [newDocMode, setNewDocMode] = useState<'blank' | 'paste' | 'generate'>('blank'); // How to start new doc
   const [pasteContent, setPasteContent] = useState(''); // Content to paste for new doc
   const [newDocTitle, setNewDocTitle] = useState(''); // Title for new doc
+  const [quickPasteContent, setQuickPasteContent] = useState(''); // Content for quick paste upload
   const navMenuRef = useRef<HTMLDivElement>(null);
   const [searchQuery, setSearchQuery] = useState(''); // Document search
   const [reviewHighlightedCells, setReviewHighlightedCells] = useState<Set<number>>(new Set()); // Cells highlighted from review suggestion
@@ -441,6 +443,12 @@ export default function EditorPage() {
     }
   }, [document?.id, loadDocumentsList]);
 
+  // Handle feedback panel state changes - memoized to prevent infinite loops
+  const handleFeedbackStateChange = useCallback((state: FeedbackPanelState) => {
+    if (!document?.id) return;
+    setFeedbackStates(prev => ({ ...prev, [document.id]: state }));
+  }, [document?.id]);
+
   // Analyze document structure
   const analyzeDocument = useCallback(async (cells: string[]) => {
     setIsAnalyzing(true);
@@ -465,11 +473,13 @@ export default function EditorPage() {
 
   // Handle text paste/upload
   const handleTextUpload = useCallback(async (text: string, title?: string) => {
-    // Parse into paragraphs
-    const cellTexts = text
-      .split(/\n\s*\n/)
-      .map((p) => p.trim())
-      .filter((p) => p.length > 0);
+    // Auto-detect syntax mode from content
+    const detectedMode = detectSyntaxMode(text);
+
+    // Use smart splitting based on detected syntax mode
+    const cellTexts = smartSplit(text, {
+      syntaxMode: detectedMode as SyntaxMode,
+    });
 
     const cells: Cell[] = cellTexts.map((content, index) => ({
       id: `cell-${index}`,
@@ -485,9 +495,6 @@ export default function EditorPage() {
 
     setDocument(newDoc);
     clearSelection();
-
-    // Auto-detect syntax mode from content
-    const detectedMode = detectSyntaxMode(text);
     setEditorMode(detectedMode);
 
     // Analyze structure in background
@@ -617,6 +624,7 @@ export default function EditorPage() {
             profileId: activeProfile,
             documentStructure: document.structure,
             model: selectedModel || undefined,
+            syntaxMode: editorMode,
           }),
           signal,
         });
@@ -826,6 +834,7 @@ export default function EditorPage() {
             documentStructure: document.structure,
             model: selectedModel || undefined,
             documentId: document.id,
+            syntaxMode: editorMode,
             includeCritique: true,
           }),
           signal,
@@ -901,6 +910,7 @@ export default function EditorPage() {
             profileId: activeProfile,
             documentStructure: document.structure,
             model: selectedModel || undefined,
+            syntaxMode: editorMode,
           }),
           signal,
         });
@@ -943,6 +953,7 @@ export default function EditorPage() {
             documentStructure: document.structure,
             model: selectedModel || undefined,
             documentId: document.id,
+            syntaxMode: editorMode,
             includeCritique: true,
           }),
           signal,
@@ -1325,11 +1336,11 @@ export default function EditorPage() {
     const title = newDocTitle.trim() || 'Untitled Document';
 
     if (newDocMode === 'paste' && pasteContent.trim()) {
-      // Parse pasted content into cells
-      const paragraphs = pasteContent
-        .split(/\n\s*\n/)
-        .map(p => p.trim())
-        .filter(p => p.length > 0);
+      // Detect syntax mode and use smart splitting
+      const detectedMode = detectSyntaxMode(pasteContent);
+      const paragraphs = smartSplit(pasteContent, {
+        syntaxMode: detectedMode as SyntaxMode,
+      });
 
       const cells: Cell[] = paragraphs.map((content, index) => ({
         id: `cell-${index}`,
@@ -1343,7 +1354,7 @@ export default function EditorPage() {
         cells,
       };
       setDocument(newDoc);
-      setEditorMode(detectSyntaxMode(pasteContent));
+      setEditorMode(detectedMode);
     } else if (newDocMode === 'generate') {
       // Create empty doc and show AI generate modal
       const newDoc: Document = {
@@ -1377,6 +1388,24 @@ export default function EditorPage() {
     setLastSelectedIndex(null);
     setShowNewDocModal(false);
   }, [newDocMode, pasteContent, newDocTitle]);
+
+  // Reorganize cells using smart splitting based on syntax mode
+  const handleReorganize = useCallback(() => {
+    if (!document || document.cells.length === 0) return;
+
+    const currentContents = document.cells.map(c => c.content);
+    const reorganized = reorganizeCells(currentContents, editorMode as SyntaxMode);
+
+    const newCells: Cell[] = reorganized.map((content, index) => ({
+      id: `cell-${Date.now()}-${index}`,
+      index,
+      content,
+    }));
+
+    setDocument(prev => prev ? { ...prev, cells: newCells } : null);
+    setSelectedCells(new Set());
+    setLastSelectedIndex(null);
+  }, [document, editorMode]);
 
   // Insert a new cell or heading at a specific position
   const handleInsertContent = useCallback((afterIndex: number | null, type: 'cell' | 'heading' = 'cell', content: string = '') => {
@@ -1822,8 +1851,8 @@ export default function EditorPage() {
                 onClick={() => setShowNavMenu(!showNavMenu)}
                 className="flex items-center gap-2 hover:opacity-80 transition-opacity"
               >
-                <img src="/logo.png" alt="AgentStyler" className="h-8 w-8" />
-                <span className="text-xl font-semibold">AgentStyler</span>
+                <img src="/logo.png" alt="Styler" className="h-8 w-8" />
+                <span className="text-xl font-semibold">Styler</span>
                 <svg
                   className={`w-4 h-4 text-[var(--muted-foreground)] transition-transform ${showNavMenu ? 'rotate-180' : ''}`}
                   fill="none"
@@ -2031,6 +2060,15 @@ export default function EditorPage() {
                   💾
                 </button>
 
+                {/* Reorganize cells */}
+                <button
+                  onClick={handleReorganize}
+                  className="p-2 rounded-lg border border-[var(--border)] hover:bg-[var(--muted)]"
+                  title="Reorganize cells (smart split based on syntax)"
+                >
+                  🧹
+                </button>
+
                 {/* History */}
                 <button
                   onClick={() => setShowHistory(!showHistory)}
@@ -2156,15 +2194,31 @@ export default function EditorPage() {
                 </div>
 
                 <textarea
+                  value={quickPasteContent}
+                  onChange={(e) => setQuickPasteContent(e.target.value)}
                   placeholder="Paste your document here..."
                   className="w-full h-48 p-4 border border-[var(--border)] rounded-lg bg-[var(--background)] resize-none"
-                  onBlur={(e) => {
-                    if (e.target.value.trim()) {
-                      handleTextUpload(e.target.value);
-                      e.target.value = '';
-                    }
-                  }}
                 />
+                {quickPasteContent.trim() && (
+                  <div className="mt-3 flex items-center justify-between">
+                    <p className="text-xs text-[var(--muted-foreground)]">
+                      {(() => {
+                        const mode = detectSyntaxMode(quickPasteContent);
+                        const cells = smartSplit(quickPasteContent, { syntaxMode: mode as SyntaxMode });
+                        return `${cells.length} cell(s) detected (${mode} mode)`;
+                      })()}
+                    </p>
+                    <button
+                      onClick={() => {
+                        handleTextUpload(quickPasteContent);
+                        setQuickPasteContent('');
+                      }}
+                      className="px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-lg hover:opacity-90"
+                    >
+                      Import Document
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           ) : (
@@ -2718,7 +2772,7 @@ export default function EditorPage() {
                   isLoading={isLoading}
                   documentStructure={document.structure}
                   savedState={feedbackStates[document.id]}
-                  onStateChange={(state) => setFeedbackStates(prev => ({ ...prev, [document.id]: state }))}
+                  onStateChange={handleFeedbackStateChange}
                   onClose={() => setShowFeedbackPanel(false)}
                   onRequestEdit={(cellIndices, instruction) => {
                     setReviewHighlightedCells(new Set(cellIndices));
@@ -3163,7 +3217,11 @@ export default function EditorPage() {
                   />
                   {pasteContent && (
                     <p className="mt-2 text-xs text-[var(--muted-foreground)]">
-                      {pasteContent.split(/\n\s*\n/).filter(p => p.trim()).length} paragraph(s) detected
+                      {(() => {
+                        const mode = detectSyntaxMode(pasteContent);
+                        const cells = smartSplit(pasteContent, { syntaxMode: mode as SyntaxMode });
+                        return `${cells.length} cell(s) detected (${mode} mode)`;
+                      })()}
                     </p>
                   )}
                 </div>

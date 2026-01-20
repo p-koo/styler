@@ -1,11 +1,10 @@
 <p align="center">
-  <img src="public/logo.png" alt="AgentStyler Logo" height="80">
-  <img src="public/styler-text.svg" alt="AgentStyler" height="60">
+  <img src="public/logo.png" alt="Styler Logo" height="80">
+  <img src="public/styler-text.svg" alt="Styler" height="60">
 </p>
 
 <p align="center">
-  <strong>A multi-agent AI system for document editing that learns your personal writing style.</strong><br>
-  Built for researchers, academics, and professionals who need consistent, high-quality writing assistance.
+  <strong>Styler is a document editor that uses ADAPT (Adaptive Document Alignment via Prompt Transformations), a multi-agent system for adaptive document alignment via prompt transformations, to align LLM-guided edits with your personal writing style.</strong>
 </p>
 
 <p align="center">
@@ -18,16 +17,16 @@
 
 ---
 
-## What is AgentStyler?
+## What is Styler?
 
-AgentStyler goes beyond simple text editing. It uses a coordinated system of **specialized AI agents** to:
+Styler goes beyond simple text editing. It uses **ADAPT** — a coordinated system of specialized AI agents — to:
 
 - **Learn your writing style** from existing work (ChatGPT exports, documents)
 - **Generate style-aligned edits** matching your preferences for verbosity, formality, and tone
 - **Critique and refine suggestions** through an iterative feedback loop
 - **Adapt continuously** based on which edits you accept or reject
 
-Unlike generic AI writing tools, AgentStyler maintains your authentic voice while improving clarity and consistency.
+Unlike generic AI writing tools, Styler maintains your authentic voice while improving clarity and consistency.
 
 ## Quick Start
 
@@ -47,7 +46,7 @@ npm run dev
 
 ## Features
 
-### Multi-Agent Architecture
+### ADAPT: Multi-Agent Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -80,6 +79,7 @@ npm run dev
 |---------|-------------|
 | **Document Review** | Get high-level feedback on your document or selected sections. Apply suggestions directly. |
 | **Syntax Highlighting** | Auto-detects LaTeX and Markdown. Colors commands, math, code. |
+| **Smart Splitting** | Intelligently splits documents by syntax (LaTeX environments, Markdown sections, paragraphs). |
 | **Audience Profiles** | Create profiles for journals, grants, blogs. Switch instantly. |
 | **Document Preferences** | Fine-tune verbosity, formality, hedging per document. |
 | **Interactive Diffs** | Inline or side-by-side. Toggle individual changes. |
@@ -106,7 +106,7 @@ npm run dev
 
 1. **Select paragraphs** — Click, Shift+click for range, Cmd/Ctrl+click for multi-select
 2. **Add instruction** — Optional: "make more concise", "add hedging", etc.
-3. **Get suggestion** — Agents generate and critique the edit
+3. **Get suggestion** — ADAPT agents generate and critique the edit
 4. **Review diff** — See changes inline or side-by-side
 5. **Accept/Reject** — Your decision helps the system learn
 
@@ -152,7 +152,7 @@ npm run dev
 
 ```
 src/
-├── agents/                    # Multi-agent system
+├── agents/                    # ADAPT multi-agent system
 │   ├── orchestrator-agent.ts  # Main coordination loop
 │   ├── critique-agent.ts      # Edit quality evaluation
 │   ├── prompt-agent.ts        # Style-aware prompt building
@@ -169,6 +169,7 @@ src/
 │   ├── FeedbackPanel.tsx      # Document review & feedback
 │   └── Header.tsx             # Navigation
 ├── memory/                    # Preference storage
+├── utils/                     # Utilities (smart splitting, etc.)
 └── providers/                 # LLM integrations
     ├── anthropic.ts
     ├── openai.ts

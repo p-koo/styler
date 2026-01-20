@@ -52,12 +52,15 @@ export interface OrchestrationResult {
   }>;
 }
 
+export type SyntaxMode = 'plain' | 'markdown' | 'latex' | 'code';
+
 export interface OrchestrationRequest {
   cells: string[];
   cellIndex: number;
   instruction?: string;
   profileId?: string;
   documentId: string;
+  syntaxMode?: SyntaxMode;
   documentStructure?: {
     title: string;
     documentType: string;
@@ -88,6 +91,7 @@ export async function orchestrateEdit(
     cellIndex,
     instruction,
     documentId,
+    syntaxMode,
     documentStructure,
     model,
     baseStyle,
@@ -132,6 +136,7 @@ export async function orchestrateEdit(
       cells,
       cellIndex,
       instruction,
+      syntaxMode,
       documentStructure,
       model,
       baseStyle: adjustedStyle,
@@ -230,6 +235,7 @@ async function generateEdit(params: {
   cells: string[];
   cellIndex: number;
   instruction?: string;
+  syntaxMode?: SyntaxMode;
   documentStructure?: OrchestrationRequest['documentStructure'];
   model?: string;
   baseStyle: BaseStyle;
@@ -242,6 +248,7 @@ async function generateEdit(params: {
     cells,
     cellIndex,
     instruction,
+    syntaxMode,
     documentStructure,
     model,
     baseStyle,
@@ -274,13 +281,54 @@ async function generateEdit(params: {
     /\b(generate|write|create|add|draft|compose|introduce|expand|elaborate)\b/.test(instructionLower) ||
     /\b(abstract|introduction|conclusion|summary|section|paragraph)\b/.test(instructionLower);
 
+  // Build syntax mode instructions
+  const getSyntaxInstructions = (mode?: SyntaxMode): string => {
+    switch (mode) {
+      case 'latex':
+        return `CRITICAL SYNTAX REQUIREMENT - LaTeX:
+This document uses LaTeX syntax. You MUST:
+- Use proper LaTeX commands and environments (e.g., \\textbf{}, \\emph{}, \\cite{})
+- Include BOTH opening AND closing tags for any environment (e.g., \\begin{abstract}...\\end{abstract})
+- Use LaTeX math mode for equations: $inline$ or \\[display\\]
+- Preserve any existing LaTeX structure and commands
+- Do NOT output plain text without LaTeX formatting when LaTeX is expected
+- Common environments: abstract, figure, table, equation, itemize, enumerate
+- If generating a new section/environment, ALWAYS include the complete \\begin{...} and \\end{...} pair`;
+      case 'markdown':
+        return `SYNTAX REQUIREMENT - Markdown:
+This document uses Markdown syntax. You MUST:
+- Use proper Markdown formatting (# headers, **bold**, *italic*, \`code\`)
+- Use proper list syntax (- or * for bullets, 1. for numbered)
+- Use code blocks with triple backticks when appropriate
+- Preserve any existing Markdown structure`;
+      case 'code':
+        return `SYNTAX REQUIREMENT - Code:
+This is a code document. You MUST:
+- Preserve proper code syntax and indentation
+- Maintain language-specific conventions
+- Keep comments in the appropriate format for the language`;
+      default:
+        return '';
+    }
+  };
+
   // Build style prompt
   const stylePrompt = buildSystemPrompt(baseStyle, audienceProfile);
+  const syntaxInstructions = getSyntaxInstructions(syntaxMode);
 
   // Build the context-aware prompt
   const contextParts: string[] = [];
   contextParts.push(stylePrompt);
   contextParts.push('');
+
+  // Add syntax mode instructions prominently at the top
+  if (syntaxInstructions) {
+    contextParts.push('---');
+    contextParts.push('');
+    contextParts.push(syntaxInstructions);
+    contextParts.push('');
+  }
+
   contextParts.push('---');
   contextParts.push('');
 
@@ -384,8 +432,14 @@ async function generateEdit(params: {
     contextParts.push('Return the content that fulfills the instruction above. You may generate new paragraphs, expand existing content, or rewrite as needed.');
     contextParts.push('If multiple paragraphs are appropriate, separate them with blank lines.');
     contextParts.push('Do not include explanations or meta-commentary - just return the content itself.');
+    if (syntaxMode === 'latex') {
+      contextParts.push('REMINDER: Output must be valid LaTeX. Include complete environment tags (\\begin{...} and \\end{...}).');
+    }
   } else {
     contextParts.push('Return ONLY the edited paragraph text. Do not include any explanation.');
+    if (syntaxMode === 'latex') {
+      contextParts.push('Preserve all LaTeX syntax and formatting.');
+    }
   }
 
   const systemPrompt = contextParts.join('\n');

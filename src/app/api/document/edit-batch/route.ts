@@ -4,6 +4,39 @@ import { buildSystemPrompt } from '@/agents/prompt-agent';
 import { loadPreferences } from '@/memory/preference-store';
 import type { DocumentStructure, DocumentSection } from '../analyze/route';
 
+type SyntaxMode = 'plain' | 'markdown' | 'latex' | 'code';
+
+// Build syntax mode instructions
+function getSyntaxInstructions(mode?: SyntaxMode): string {
+  switch (mode) {
+    case 'latex':
+      return `CRITICAL SYNTAX REQUIREMENT - LaTeX:
+This document uses LaTeX syntax. You MUST:
+- Use proper LaTeX commands and environments (e.g., \\textbf{}, \\emph{}, \\cite{})
+- Include BOTH opening AND closing tags for any environment (e.g., \\begin{abstract}...\\end{abstract})
+- Use LaTeX math mode for equations: $inline$ or \\[display\\]
+- Preserve any existing LaTeX structure and commands
+- Do NOT output plain text without LaTeX formatting when LaTeX is expected
+- Common environments: abstract, figure, table, equation, itemize, enumerate
+- If generating a new section/environment, ALWAYS include the complete \\begin{...} and \\end{...} pair`;
+    case 'markdown':
+      return `SYNTAX REQUIREMENT - Markdown:
+This document uses Markdown syntax. You MUST:
+- Use proper Markdown formatting (# headers, **bold**, *italic*, \`code\`)
+- Use proper list syntax (- or * for bullets, 1. for numbered)
+- Use code blocks with triple backticks when appropriate
+- Preserve any existing Markdown structure`;
+    case 'code':
+      return `SYNTAX REQUIREMENT - Code:
+This is a code document. You MUST:
+- Preserve proper code syntax and indentation
+- Maintain language-specific conventions
+- Keep comments in the appropriate format for the language`;
+    default:
+      return '';
+  }
+}
+
 // Section-specific editing guidance
 const sectionGuidance: Record<DocumentSection['type'], string> = {
   abstract: 'This is the ABSTRACT. Be extremely concise. Every word counts. Lead with significance, summarize key findings with specific results.',
@@ -20,13 +53,14 @@ const sectionGuidance: Record<DocumentSection['type'], string> = {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { cells, selectedIndices, instruction, profileId, documentStructure, model } = body as {
+    const { cells, selectedIndices, instruction, profileId, documentStructure, model, syntaxMode } = body as {
       cells: string[];
       selectedIndices: number[];
       instruction?: string;
       profileId?: string;
       documentStructure?: DocumentStructure;
       model?: string;
+      syntaxMode?: SyntaxMode;
     };
 
     if (!cells || !selectedIndices || selectedIndices.length < 2) {
@@ -124,6 +158,16 @@ export async function POST(request: NextRequest) {
 
     contextParts.push(stylePrompt);
     contextParts.push('');
+
+    // Add syntax mode instructions prominently
+    const syntaxInstructions = getSyntaxInstructions(syntaxMode);
+    if (syntaxInstructions) {
+      contextParts.push('---');
+      contextParts.push('');
+      contextParts.push(syntaxInstructions);
+      contextParts.push('');
+    }
+
     contextParts.push('---');
     contextParts.push('');
 
@@ -220,6 +264,10 @@ export async function POST(request: NextRequest) {
       contextParts.push('- Return ONLY the new content');
       contextParts.push('- If generating multiple items (e.g., title AND abstract), separate them with: <<<PARAGRAPH_BREAK>>>');
       contextParts.push('- Do NOT include labels like "Title:" or "Abstract:" - just the content itself');
+      if (syntaxMode === 'latex') {
+        contextParts.push('');
+        contextParts.push('REMINDER: Output must be valid LaTeX. For abstracts use \\begin{abstract}...\\end{abstract}.');
+      }
     } else if (isAddInstruction) {
       contextParts.push('REMINDER: You are ADDING content. Your output MUST include:');
       contextParts.push('1. The NEW content you are adding (abstract, introduction, etc.)');
@@ -236,6 +284,10 @@ export async function POST(request: NextRequest) {
       contextParts.push('Second paragraph text here.');
       contextParts.push('<<<PARAGRAPH_BREAK>>>');
       contextParts.push('Third paragraph text here.');
+      if (syntaxMode === 'latex') {
+        contextParts.push('');
+        contextParts.push('REMINDER: Output must be valid LaTeX with complete environment tags.');
+      }
     } else {
       contextParts.push('CRITICAL FORMATTING REQUIREMENT:');
       contextParts.push('- Return ONLY the text content');
@@ -247,6 +299,10 @@ export async function POST(request: NextRequest) {
       contextParts.push('Second paragraph text here.');
       contextParts.push('<<<PARAGRAPH_BREAK>>>');
       contextParts.push('Third paragraph text here.');
+      if (syntaxMode === 'latex') {
+        contextParts.push('');
+        contextParts.push('REMINDER: Preserve all LaTeX syntax and formatting.');
+      }
     }
 
     const systemPrompt = contextParts.join('\n');

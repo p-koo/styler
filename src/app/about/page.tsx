@@ -13,24 +13,23 @@ export default function AboutPage() {
       <main className="max-w-4xl mx-auto px-4 py-16">
         {/* Header */}
         <div className="text-center mb-12">
-          <h1 className="text-4xl font-bold text-[var(--foreground)] mb-4">About AgentStyler</h1>
+          <h1 className="text-4xl font-bold text-[var(--foreground)] mb-4">About Styler</h1>
           <p className="text-lg text-[var(--muted-foreground)]">
-            A multi-agent AI system for intelligent document editing
+            A document editor powered by ADAPT for style-aligned writing assistance
           </p>
         </div>
 
-        {/* What is AgentStyler */}
+        {/* What is Styler */}
         <section className="mb-12">
-          <h2 className="text-2xl font-semibold text-[var(--foreground)] mb-4">What is AgentStyler?</h2>
+          <h2 className="text-2xl font-semibold text-[var(--foreground)] mb-4">What is Styler?</h2>
           <div className="space-y-4 text-[var(--muted-foreground)]">
             <p>
-              AgentStyler is a <strong className="text-[var(--foreground)]">multi-agent AI system</strong> designed
-              to help researchers, academics, and professionals maintain consistent, high-quality writing.
-              Unlike generic AI writing tools that apply one-size-fits-all edits, AgentStyler learns your unique
-              voice and adapts its suggestions to match your personal style.
+              Styler is a document editor that uses <strong className="text-[var(--foreground)]">ADAPT (Adaptive Document Alignment via Prompt Transformations)</strong>,
+              a multi-agent system for adaptive document alignment via prompt transformations, to align LLM-guided edits with your personal writing style.
             </p>
             <p>
-              The system uses a coordinated architecture of specialized AI agents that work together to
+              Unlike generic AI writing tools that apply one-size-fits-all edits, Styler learns your unique
+              voice and adapts its suggestions to match your personal style. The ADAPT system uses a coordinated architecture of specialized AI agents that work together to
               understand context, generate appropriate edits, and ensure quality through an iterative
               critique-and-refine process.
             </p>
@@ -39,9 +38,9 @@ export default function AboutPage() {
 
         {/* Architecture Diagram */}
         <section className="mb-12">
-          <h2 className="text-2xl font-semibold text-[var(--foreground)] mb-4">Multi-Agent Architecture</h2>
+          <h2 className="text-2xl font-semibold text-[var(--foreground)] mb-4">ADAPT: Multi-Agent Architecture</h2>
           <p className="text-[var(--muted-foreground)] mb-6">
-            When you request an edit, multiple specialized agents collaborate to produce style-aligned suggestions:
+            When you request an edit, ADAPT's specialized agents collaborate to produce style-aligned suggestions:
           </p>
 
           {/* Visual Architecture Diagram */}
@@ -255,7 +254,7 @@ export default function AboutPage() {
         <section className="mb-12">
           <h2 className="text-2xl font-semibold text-[var(--foreground)] mb-4">Open Source</h2>
           <p className="text-[var(--muted-foreground)] mb-4">
-            AgentStyler is open source under the MIT license. Contributions, bug reports, and feature requests are welcome.
+            Styler is open source under the MIT license. Contributions, bug reports, and feature requests are welcome.
           </p>
           <a
             href="https://github.com/p-koo/styler"

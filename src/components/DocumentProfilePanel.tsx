@@ -66,6 +66,7 @@ export default function DocumentProfilePanel({
   // For import constraints
   const [importText, setImportText] = useState('');
   const [importing, setImporting] = useState(false);
+  const [consolidating, setConsolidating] = useState(false);
   const [importPreview, setImportPreview] = useState<{
     verbosityAdjust: number;
     formalityAdjust: number;
@@ -79,14 +80,19 @@ export default function DocumentProfilePanel({
   const [showImportPreview, setShowImportPreview] = useState(false);
 
   // Load preferences
-  // Track if we're currently analyzing goals (to prevent polling overwrites)
-  // Using a ref for synchronous access - state updates are async and cause race conditions
+  // Track if we're currently analyzing goals or saving (to prevent polling overwrites)
+  // Using refs for synchronous access - state updates are async and cause race conditions
   const isAnalyzingRef = useRef(false);
+  const isSavingRef = useRef(false);
+  const lastSaveTimeRef = useRef(0);
 
   const loadPreferences = useCallback(async () => {
     if (!documentId) return;
-    // Skip polling while analyzing goals to prevent race condition
+    // Skip polling while analyzing goals or saving to prevent race condition
     if (isAnalyzingRef.current) return;
+    if (isSavingRef.current) return;
+    // Also skip if we just saved (give server time to persist)
+    if (Date.now() - lastSaveTimeRef.current < 2000) return;
 
     try {
       const res = await fetch(`/api/documents/${documentId}/preferences`);
@@ -119,6 +125,7 @@ export default function DocumentProfilePanel({
   // Save adjustments
   const saveAdjustments = async (newAdjustments: Partial<DocumentAdjustments>) => {
     setSaving(true);
+    isSavingRef.current = true;
     try {
       await fetch(`/api/documents/${documentId}/preferences`, {
         method: 'PATCH',
@@ -126,10 +133,12 @@ export default function DocumentProfilePanel({
         body: JSON.stringify({ adjustments: newAdjustments }),
       });
       setLastUpdated(new Date().toISOString());
+      lastSaveTimeRef.current = Date.now();
     } catch (err) {
       console.error('Failed to save:', err);
     } finally {
       setSaving(false);
+      isSavingRef.current = false;
     }
   };
 
@@ -180,6 +189,39 @@ export default function DocumentProfilePanel({
     const newRules = adjustments.learnedRules.filter(r => r.rule !== ruleText);
     setAdjustments(prev => ({ ...prev, learnedRules: newRules }));
     saveAdjustments({ learnedRules: newRules });
+  };
+
+  // Consolidate guidance items using LLM
+  const consolidateGuidance = async () => {
+    if (adjustments.additionalFramingGuidance.length < 3) return;
+
+    setConsolidating(true);
+    try {
+      const res = await fetch(`/api/documents/${documentId}/consolidate-guidance`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          guidance: adjustments.additionalFramingGuidance,
+          rules: adjustments.learnedRules.map(r => r.rule),
+        }),
+      });
+
+      if (!res.ok) throw new Error('Failed to consolidate');
+
+      const data = await res.json();
+
+      if (data.consolidatedGuidance) {
+        setAdjustments(prev => ({
+          ...prev,
+          additionalFramingGuidance: data.consolidatedGuidance
+        }));
+        saveAdjustments({ additionalFramingGuidance: data.consolidatedGuidance });
+      }
+    } catch (err) {
+      alert('Failed to consolidate guidance');
+    } finally {
+      setConsolidating(false);
+    }
   };
 
   // Reset
@@ -611,7 +653,11 @@ export default function DocumentProfilePanel({
                   <input
                     type="checkbox"
                     checked={adjustments.genAlphaMode || false}
-                    onChange={() => saveAdjustments({ genAlphaMode: !adjustments.genAlphaMode })}
+                    onChange={() => {
+                      const newValue = !adjustments.genAlphaMode;
+                      setAdjustments(prev => ({ ...prev, genAlphaMode: newValue }));
+                      saveAdjustments({ genAlphaMode: newValue });
+                    }}
                     className="sr-only peer"
                   />
                   <div className={`w-9 h-5 rounded-full peer-focus:outline-none transition-colors ${
@@ -641,7 +687,19 @@ export default function DocumentProfilePanel({
           <div className="space-y-4">
             {/* Framing Guidance */}
             <div>
-              <h4 className="text-xs font-medium mb-2">Framing & Constraints</h4>
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-xs font-medium">Framing & Constraints</h4>
+                {adjustments.additionalFramingGuidance.length >= 3 && (
+                  <button
+                    onClick={consolidateGuidance}
+                    disabled={consolidating}
+                    className="text-[10px] px-2 py-0.5 bg-amber-50 text-amber-700 rounded hover:bg-amber-100 disabled:opacity-50"
+                    title="Use AI to merge similar guidance into fewer, clearer items"
+                  >
+                    {consolidating ? 'Consolidating...' : '✨ Consolidate'}
+                  </button>
+                )}
+              </div>
               <div className="space-y-1 mb-2 min-h-[24px]">
                 {adjustments.additionalFramingGuidance.map((g, i) => (
                   <div key={i} className="flex items-start gap-2 text-[10px] group p-2 bg-blue-50 rounded">

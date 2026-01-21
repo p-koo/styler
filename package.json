@@ -1,17 +1,23 @@
 {
-  "name": "preference",
+  "name": "styler",
   "version": "1.0.0",
-  "description": "Preference Bridge System - Learn and apply writing style preferences to LLM interactions",
+  "description": "AI-powered document editing that learns your writing style",
+  "main": "electron/main.js",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "bootstrap": "npx tsx src/bootstrap/cli.ts"
+    "bootstrap": "npx tsx src/bootstrap/cli.ts",
+    "electron:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:3000 && NODE_ENV=development electron .\"",
+    "electron:build": "next build && electron-builder",
+    "electron:build:mac": "next build && electron-builder --mac",
+    "electron:build:win": "next build && electron-builder --win",
+    "electron:build:linux": "next build && electron-builder --linux"
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "author": "Peter Koo",
+  "license": "MIT",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.2",
     "@codemirror/commands": "^6.10.1",
@@ -39,6 +45,57 @@
   },
   "devDependencies": {
     "@types/pdf-parse": "^1.1.5",
-    "tsx": "^4.21.0"
+    "concurrently": "^9.2.1",
+    "electron": "^40.0.0",
+    "electron-builder": "^26.4.0",
+    "tsx": "^4.21.0",
+    "wait-on": "^9.0.3"
+  },
+  "build": {
+    "appId": "com.styler.app",
+    "productName": "Styler",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron/**/*",
+      "!node_modules"
+    ],
+    "extraResources": [
+      {
+        "from": ".next/standalone",
+        "to": ".next/standalone",
+        "filter": ["**/*", "!**/.env", "!**/.env.*", "!**/data/**", "!**/documents/**"]
+      },
+      {
+        "from": ".next/static",
+        "to": ".next/standalone/.next/static",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "public",
+        "to": ".next/standalone/public",
+        "filter": ["**/*"]
+      }
+    ],
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "build/icon.png",
+      "category": "public.app-category.productivity"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.png"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "build/icon.png",
+      "category": "Office"
+    }
   }
 }

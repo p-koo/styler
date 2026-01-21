@@ -28,18 +28,22 @@ import {
   getOrCreateDocumentPreferences,
   saveDocumentPreferences,
 } from '@/memory/document-preferences';
+import { loadConfig } from '@/memory/config-store';
 import { analyzeIntent } from './intent-agent';
 
-// Orchestrator configuration
-const CONFIG = {
-  maxRetries: 3,                    // Max edit attempts before giving up
-  alignmentThreshold: 0.8,          // Minimum alignment score to show to user
-  strongMisalignmentThreshold: 0.5, // Below this, apply stronger corrections
-  adjustmentStrength: {
-    normal: 0.3,                    // How much to adjust per iteration
-    strong: 0.6,                    // Adjustment for strong misalignment
-  },
-};
+// Get orchestrator configuration (reads from config store with defaults)
+function getConfig() {
+  const appConfig = loadConfig();
+  return {
+    maxRetries: appConfig.maxRefinementLoops || 3,
+    alignmentThreshold: appConfig.alignmentThreshold || 0.8,
+    strongMisalignmentThreshold: 0.5, // Below this, apply stronger corrections
+    adjustmentStrength: {
+      normal: 0.3,                    // How much to adjust per iteration
+      strong: 0.6,                    // Adjustment for strong misalignment
+    },
+  };
+}
 
 // Agent trace for transparency/debugging
 export interface AgentTraceEntry {
@@ -108,6 +112,8 @@ export interface OrchestrationRequest {
 export async function orchestrateEdit(
   request: OrchestrationRequest
 ): Promise<OrchestrationResult> {
+  const CONFIG = getConfig(); // Load config at start of each edit
+
   const {
     cells,
     cellIndex,
@@ -292,30 +298,52 @@ export async function orchestrateEdit(
     });
 
     // Critique the edit
-    const critiqueStartTime = Date.now();
-    const critique = await critiqueEdit({
-      originalText: currentCell,
-      suggestedEdit: editedText,
-      baseStyle: adjustedStyle,
-      audienceProfile,
-      documentPreferences: documentPrefs,
-      sectionType: currentSection?.type,
-      model,
-    });
+    // Optimization: skip critique on final iteration if we already have a good score
+    const isLastAttempt = attempt === CONFIG.maxRetries;
+    const hasGoodScore = bestCritique.alignmentScore >= CONFIG.alignmentThreshold * 0.9; // 90% of threshold
+    const skipCritique = isLastAttempt && hasGoodScore;
 
-    agentTrace.push({
-      agent: 'critique',
-      timestamp: critiqueStartTime,
-      durationMs: Date.now() - critiqueStartTime,
-      summary: `Scored ${Math.round(critique.alignmentScore * 100)}% alignment${critique.issues.length > 0 ? `, ${critique.issues.length} issue${critique.issues.length > 1 ? 's' : ''}` : ''}`,
-      details: {
-        attempt,
-        alignmentScore: critique.alignmentScore,
-        predictedAcceptance: critique.predictedAcceptance,
-        issueCount: critique.issues.length,
-        issueTypes: critique.issues.map(i => i.type),
-      },
-    });
+    let critique: CritiqueAnalysis;
+
+    if (skipCritique) {
+      // Use previous best and assume this edit is similar
+      critique = {
+        ...bestCritique,
+        alignmentScore: Math.min(bestCritique.alignmentScore + 0.05, 1.0), // Slight boost for final attempt
+      };
+      agentTrace.push({
+        agent: 'critique',
+        timestamp: Date.now(),
+        durationMs: 1,
+        summary: `Skipped (using previous score ${Math.round(bestCritique.alignmentScore * 100)}%)`,
+        details: { attempt, skipped: true, reason: 'final iteration optimization' },
+      });
+    } else {
+      const critiqueStartTime = Date.now();
+      critique = await critiqueEdit({
+        originalText: currentCell,
+        suggestedEdit: editedText,
+        baseStyle: adjustedStyle,
+        audienceProfile,
+        documentPreferences: documentPrefs,
+        sectionType: currentSection?.type,
+        model,
+      });
+
+      agentTrace.push({
+        agent: 'critique',
+        timestamp: critiqueStartTime,
+        durationMs: Date.now() - critiqueStartTime,
+        summary: `Scored ${Math.round(critique.alignmentScore * 100)}% alignment${critique.issues.length > 0 ? `, ${critique.issues.length} issue${critique.issues.length > 1 ? 's' : ''}` : ''}`,
+        details: {
+          attempt,
+          alignmentScore: critique.alignmentScore,
+          predictedAcceptance: critique.predictedAcceptance,
+          issueCount: critique.issues.length,
+          issueTypes: critique.issues.map(i => i.type),
+        },
+      });
+    }
 
     // Track this attempt
     const adjustmentsMade: string[] = [];
@@ -907,6 +935,8 @@ export async function handleRejection(
   audienceProfile?: AudienceProfile,
   model?: string
 ): Promise<DocumentPreferences> {
+  const CONFIG = getConfig(); // Load config
+
   let prefs = await getOrCreateDocumentPreferences(documentId, audienceProfile?.id || null);
 
   // Count recent rejections

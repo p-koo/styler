@@ -35,29 +35,75 @@ When you ask ChatGPT to "improve" your writing, it applies its default preferenc
 
 ---
 
-## Quick Start
+## Installation
+
+### Quick Install (Recommended)
+
+Download the latest release for your platform:
+
+| Platform | Download |
+|----------|----------|
+| **macOS** | [Styler-1.0.0.dmg](https://github.com/p-koo/styler/releases/latest) |
+| **Windows** | Coming soon |
+| **Linux** | Coming soon |
+
+1. Download and open the DMG
+2. Drag Styler to Applications
+3. Launch Styler (right-click → Open on first launch to bypass Gatekeeper)
+4. Configure your API key in Settings → API Key Configuration
+
+> **Note:** You'll need an API key from [Anthropic](https://console.anthropic.com/settings/keys) or [OpenAI](https://platform.openai.com/api-keys) to use Styler.
+
+### Developer Installation
+
+For developers who want to run from source or contribute:
 
 ```bash
 # Clone and install
 git clone https://github.com/p-koo/styler.git
 cd styler && npm install
 
-# Configure API key
+# Configure API key (choose one method)
+
+# Option A: Via Settings UI (recommended)
+npm run dev
+# Open http://localhost:3000/settings and add your API key
+
+# Option B: Via environment file
 cp .env.example .env.local
 # Edit .env.local with your key:
 # ANTHROPIC_API_KEY=sk-ant-...  (recommended)
 # or OPENAI_API_KEY=sk-...
 
-# Run
+# Run development server
 npm run dev
 # Open http://localhost:3000
+```
+
+#### Building the Desktop App
+
+```bash
+# Build for macOS
+npm run electron:build:mac
+
+# Build for Windows
+npm run electron:build:win
+
+# Build for Linux
+npm run electron:build:linux
+
+# Output will be in dist/
 ```
 
 ---
 
 ## Requirements
 
-### System Requirements
+### For Desktop App (Quick Install)
+- **macOS 10.15+** (Catalina or later)
+- **API Key** from Anthropic or OpenAI (see below)
+
+### For Development
 - **Node.js 18+** — [Download](https://nodejs.org/)
 - **npm** or **yarn** — Comes with Node.js
 
@@ -259,7 +305,8 @@ src/
 
 | Category | Technologies |
 |----------|-------------|
-| **Frontend** | Next.js 15, React 19, TypeScript, Tailwind CSS |
+| **Desktop** | Electron 40 |
+| **Frontend** | Next.js 16, React 19, TypeScript, Tailwind CSS |
 | **Editor** | CodeMirror 6 with syntax highlighting |
 | **AI** | Anthropic Claude, OpenAI GPT-4, Ollama |
 | **Storage** | Local JSON files (no cloud dependency) |

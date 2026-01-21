@@ -8,7 +8,87 @@ import {
   getPreferencesSummary,
 } from '@/memory/document-preferences';
 import { getEditStats } from '@/agents/critique-agent';
-import type { DocumentAdjustments } from '@/types';
+import { createProvider, getDefaultProviderConfig } from '@/providers/base';
+import type { DocumentAdjustments, LearnedRule } from '@/types';
+
+const CONSOLIDATION_THRESHOLD = 5;
+
+/**
+ * Auto-consolidate guidance items if they exceed threshold
+ */
+async function autoConsolidateGuidance(items: string[]): Promise<string[]> {
+  if (items.length <= CONSOLIDATION_THRESHOLD) return items;
+
+  try {
+    const provider = await createProvider(getDefaultProviderConfig());
+    const prompt = `Consolidate these writing guidance items into ${Math.min(4, Math.ceil(items.length / 2))} clear, comprehensive directives. Preserve all meaning.
+
+Items:
+${items.map((g, i) => `${i + 1}. ${g}`).join('\n')}
+
+Return ONLY a JSON array of consolidated strings, nothing else.`;
+
+    const result = await provider.complete({
+      messages: [{ role: 'user', content: prompt }],
+      maxTokens: 500,
+      temperature: 0.3,
+    });
+
+    let content = result.content.trim();
+    if (content.startsWith('```')) {
+      content = content.replace(/```json?\n?/g, '').replace(/```$/g, '').trim();
+    }
+    const consolidated = JSON.parse(content);
+    if (Array.isArray(consolidated) && consolidated.length > 0) {
+      console.log(`[Auto-consolidate] Guidance: ${items.length} → ${consolidated.length} items`);
+      return consolidated;
+    }
+  } catch (err) {
+    console.error('Auto-consolidate guidance failed:', err);
+  }
+  return items;
+}
+
+/**
+ * Auto-consolidate rules if they exceed threshold
+ */
+async function autoConsolidateRules(rules: LearnedRule[]): Promise<LearnedRule[]> {
+  if (rules.length <= CONSOLIDATION_THRESHOLD) return rules;
+
+  try {
+    const provider = await createProvider(getDefaultProviderConfig());
+    const prompt = `Consolidate these writing rules into ${Math.min(4, Math.ceil(rules.length / 2))} clear, comprehensive rules. Preserve all meaning.
+
+Rules:
+${rules.map((r, i) => `${i + 1}. ${r.rule}`).join('\n')}
+
+Return ONLY a JSON array of rule strings, nothing else.`;
+
+    const result = await provider.complete({
+      messages: [{ role: 'user', content: prompt }],
+      maxTokens: 500,
+      temperature: 0.3,
+    });
+
+    let content = result.content.trim();
+    if (content.startsWith('```')) {
+      content = content.replace(/```json?\n?/g, '').replace(/```$/g, '').trim();
+    }
+    const consolidated = JSON.parse(content);
+    if (Array.isArray(consolidated) && consolidated.length > 0) {
+      console.log(`[Auto-consolidate] Rules: ${rules.length} → ${consolidated.length} items`);
+      return consolidated.map((rule: string) => ({
+        rule,
+        source: 'inferred' as const,
+        confidence: 0.9,
+        timestamp: new Date().toISOString(),
+      }));
+    }
+  } catch (err) {
+    console.error('Auto-consolidate rules failed:', err);
+  }
+  return rules;
+}
 
 /**
  * GET /api/documents/[id]/preferences
@@ -54,6 +134,7 @@ export async function GET(
  * PATCH /api/documents/[id]/preferences
  *
  * Updates the document-specific preferences.
+ * Auto-consolidates guidance/rules if they exceed threshold.
  */
 export async function PATCH(
   request: NextRequest,
@@ -62,7 +143,7 @@ export async function PATCH(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { adjustments, baseProfileId } = body as {
+    let { adjustments, baseProfileId } = body as {
       adjustments?: Partial<DocumentAdjustments>;
       baseProfileId?: string | null;
     };
@@ -72,6 +153,18 @@ export async function PATCH(
 
     // Update adjustments if provided
     if (adjustments) {
+      // Check if we need to auto-consolidate guidance
+      const newGuidance = adjustments.additionalFramingGuidance;
+      if (newGuidance && newGuidance.length > CONSOLIDATION_THRESHOLD) {
+        adjustments.additionalFramingGuidance = await autoConsolidateGuidance(newGuidance);
+      }
+
+      // Check if we need to auto-consolidate rules
+      const newRules = adjustments.learnedRules;
+      if (newRules && newRules.length > CONSOLIDATION_THRESHOLD) {
+        adjustments.learnedRules = await autoConsolidateRules(newRules);
+      }
+
       prefs = await updateDocumentAdjustments(id, adjustments);
     }
 

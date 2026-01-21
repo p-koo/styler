@@ -7,6 +7,19 @@ import type { PreferenceStore, AudienceProfile, BaseStyle } from '@/types';
 const MODEL_STORAGE_KEY = 'preference-editor-model';
 const THEME_STORAGE_KEY = 'styler-theme';
 
+interface AppConfig {
+  hasAnthropicKey: boolean;
+  hasOpenaiKey: boolean;
+  hasOllamaUrl: boolean;
+  anthropicFromEnv: boolean;
+  openaiFromEnv: boolean;
+  anthropicApiKey: string;
+  openaiApiKey: string;
+  ollamaBaseUrl: string;
+  maxRefinementLoops: number;
+  alignmentThreshold: number;
+}
+
 /**
  * Generate a ChatGPT-ready prompt from a profile
  */
@@ -109,9 +122,19 @@ export default function SettingsPage() {
   const [darkMode, setDarkMode] = useState<'system' | 'light' | 'dark'>('system');
   const [themeLoaded, setThemeLoaded] = useState(false);
 
+  // App configuration (API keys, advanced settings)
+  const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
+  const [newAnthropicKey, setNewAnthropicKey] = useState('');
+  const [newOpenaiKey, setNewOpenaiKey] = useState('');
+  const [newOllamaUrl, setNewOllamaUrl] = useState('');
+  const [savingConfig, setSavingConfig] = useState(false);
+  const [showApiConfig, setShowApiConfig] = useState(false);
+  const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
+
   useEffect(() => {
     fetchPreferences();
     fetchModels();
+    fetchConfig();
     // Load theme from localStorage
     const savedTheme = localStorage.getItem(THEME_STORAGE_KEY) as 'system' | 'light' | 'dark' | null;
     if (savedTheme) {
@@ -155,6 +178,46 @@ export default function SettingsPage() {
     setSelectedModel(model);
     localStorage.setItem(MODEL_STORAGE_KEY, model);
     setMessage({ type: 'success', text: `Model changed to ${model}` });
+  }
+
+  async function fetchConfig() {
+    try {
+      const res = await fetch('/api/config');
+      if (res.ok) {
+        const data = await res.json();
+        setAppConfig(data);
+        setNewOllamaUrl(data.ollamaBaseUrl || 'http://localhost:11434');
+      }
+    } catch (err) {
+      console.error('Failed to load config:', err);
+    }
+  }
+
+  async function updateConfig(updates: Partial<AppConfig>) {
+    setSavingConfig(true);
+    try {
+      const res = await fetch('/api/config', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || 'Failed to save');
+      }
+
+      await fetchConfig();
+      setMessage({ type: 'success', text: 'Configuration saved' });
+
+      // Clear input fields after successful save
+      if (updates.anthropicApiKey) setNewAnthropicKey('');
+      if (updates.openaiApiKey) setNewOpenaiKey('');
+    } catch (err) {
+      setMessage({ type: 'error', text: `Failed to save: ${err instanceof Error ? err.message : 'Unknown error'}` });
+    } finally {
+      setSavingConfig(false);
+    }
   }
 
   async function fetchPreferences() {
@@ -533,6 +596,146 @@ export default function SettingsPage() {
                 Choose your preferred color scheme.
               </p>
             </div>
+          </div>
+
+          {/* API Configuration Toggle */}
+          <div className="mt-6 pt-4 border-t border-[var(--border)]">
+            <button
+              onClick={() => setShowApiConfig(!showApiConfig)}
+              className="flex items-center justify-between w-full text-left"
+            >
+              <span className="text-sm font-medium">API Key Configuration</span>
+              <svg
+                className={`w-4 h-4 transition-transform ${showApiConfig ? 'rotate-180' : ''}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+
+            {showApiConfig && (
+              <div className="mt-4 space-y-4">
+                <p className="text-[var(--muted-foreground)] text-xs">
+                  Configure your API keys for LLM providers. At least one is required.
+                </p>
+
+                {/* Anthropic API Key */}
+                <div>
+                  <label className="block text-sm font-medium mb-2">Anthropic API Key</label>
+                  {appConfig?.anthropicFromEnv ? (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={appConfig?.anthropicApiKey || ''}
+                        disabled
+                        className="flex-1 px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--muted)] text-[var(--muted-foreground)] text-sm"
+                      />
+                      <span className="text-xs text-[var(--muted-foreground)]">From env</span>
+                    </div>
+                  ) : (
+                    <div className="flex gap-2">
+                      <input
+                        type="password"
+                        value={newAnthropicKey}
+                        onChange={(e) => setNewAnthropicKey(e.target.value)}
+                        placeholder={appConfig?.hasAnthropicKey ? appConfig.anthropicApiKey : 'sk-ant-...'}
+                        className="flex-1 px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm"
+                      />
+                      <button
+                        onClick={() => updateConfig({ anthropicApiKey: newAnthropicKey })}
+                        disabled={!newAnthropicKey || savingConfig}
+                        className="px-3 py-2 text-sm bg-[var(--primary)] text-[var(--primary-foreground)] rounded-lg hover:opacity-90 disabled:opacity-50"
+                      >
+                        {savingConfig ? '...' : 'Save'}
+                      </button>
+                      {appConfig?.hasAnthropicKey && (
+                        <button
+                          onClick={() => updateConfig({ anthropicApiKey: '' })}
+                          disabled={savingConfig}
+                          className="px-3 py-2 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {appConfig?.hasAnthropicKey && !appConfig?.anthropicFromEnv && (
+                    <p className="mt-1 text-xs text-green-600">Configured</p>
+                  )}
+                </div>
+
+                {/* OpenAI API Key */}
+                <div>
+                  <label className="block text-sm font-medium mb-2">OpenAI API Key</label>
+                  {appConfig?.openaiFromEnv ? (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={appConfig?.openaiApiKey || ''}
+                        disabled
+                        className="flex-1 px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--muted)] text-[var(--muted-foreground)] text-sm"
+                      />
+                      <span className="text-xs text-[var(--muted-foreground)]">From env</span>
+                    </div>
+                  ) : (
+                    <div className="flex gap-2">
+                      <input
+                        type="password"
+                        value={newOpenaiKey}
+                        onChange={(e) => setNewOpenaiKey(e.target.value)}
+                        placeholder={appConfig?.hasOpenaiKey ? appConfig.openaiApiKey : 'sk-...'}
+                        className="flex-1 px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm"
+                      />
+                      <button
+                        onClick={() => updateConfig({ openaiApiKey: newOpenaiKey })}
+                        disabled={!newOpenaiKey || savingConfig}
+                        className="px-3 py-2 text-sm bg-[var(--primary)] text-[var(--primary-foreground)] rounded-lg hover:opacity-90 disabled:opacity-50"
+                      >
+                        {savingConfig ? '...' : 'Save'}
+                      </button>
+                      {appConfig?.hasOpenaiKey && (
+                        <button
+                          onClick={() => updateConfig({ openaiApiKey: '' })}
+                          disabled={savingConfig}
+                          className="px-3 py-2 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {appConfig?.hasOpenaiKey && !appConfig?.openaiFromEnv && (
+                    <p className="mt-1 text-xs text-green-600">Configured</p>
+                  )}
+                </div>
+
+                {/* Ollama Base URL */}
+                <div>
+                  <label className="block text-sm font-medium mb-2">Ollama Base URL</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={newOllamaUrl}
+                      onChange={(e) => setNewOllamaUrl(e.target.value)}
+                      placeholder="http://localhost:11434"
+                      className="flex-1 px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm text-[var(--muted-foreground)]"
+                    />
+                    <button
+                      onClick={() => updateConfig({ ollamaBaseUrl: newOllamaUrl })}
+                      disabled={savingConfig}
+                      className="px-3 py-2 text-sm bg-[var(--primary)] text-[var(--primary-foreground)] rounded-lg hover:opacity-90 disabled:opacity-50"
+                    >
+                      {savingConfig ? '...' : 'Save'}
+                    </button>
+                  </div>
+                  <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                    For local models. Install Ollama from ollama.ai
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         </section>
 
@@ -1000,6 +1203,81 @@ export default function SettingsPage() {
           </div>
         </div>
       )}
+
+        {/* Advanced Settings Section */}
+        <section className="mb-8 p-6 border border-[var(--border)] rounded-lg">
+          <button
+            onClick={() => setShowAdvancedSettings(!showAdvancedSettings)}
+            className="flex items-center justify-between w-full text-left"
+          >
+            <div>
+              <h2 className="text-lg font-medium">Advanced Settings</h2>
+              <p className="text-[var(--muted-foreground)] text-sm">
+                Fine-tune the edit refinement process.
+              </p>
+            </div>
+            <svg
+              className={`w-5 h-5 transition-transform ${showAdvancedSettings ? 'rotate-180' : ''}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+
+          {showAdvancedSettings && (
+            <div className="mt-4 pt-4 border-t border-[var(--border)]">
+              <div className="grid grid-cols-2 gap-6">
+                {/* Max Refinement Loops */}
+                <div>
+                  <label className="block text-sm font-medium mb-2">
+                    Max Refinement Loops: {appConfig?.maxRefinementLoops || 3}
+                  </label>
+                  <input
+                    type="range"
+                    min="1"
+                    max="5"
+                    value={appConfig?.maxRefinementLoops || 3}
+                    onChange={(e) => updateConfig({ maxRefinementLoops: parseInt(e.target.value) })}
+                    className="w-full"
+                    disabled={savingConfig}
+                  />
+                  <div className="flex justify-between text-xs text-[var(--muted-foreground)]">
+                    <span>1 (faster)</span>
+                    <span>5 (higher quality)</span>
+                  </div>
+                  <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                    How many times to refine an edit before showing it to you.
+                  </p>
+                </div>
+
+                {/* Alignment Threshold */}
+                <div>
+                  <label className="block text-sm font-medium mb-2">
+                    Quality Threshold: {Math.round((appConfig?.alignmentThreshold || 0.8) * 100)}%
+                  </label>
+                  <input
+                    type="range"
+                    min="50"
+                    max="100"
+                    value={Math.round((appConfig?.alignmentThreshold || 0.8) * 100)}
+                    onChange={(e) => updateConfig({ alignmentThreshold: parseInt(e.target.value) / 100 })}
+                    className="w-full"
+                    disabled={savingConfig}
+                  />
+                  <div className="flex justify-between text-xs text-[var(--muted-foreground)]">
+                    <span>50% (lenient)</span>
+                    <span>100% (strict)</span>
+                  </div>
+                  <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                    Minimum alignment score before showing an edit.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+        </section>
 
       {/* Create Profile Modal */}
       {showCreateProfile && (

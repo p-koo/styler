@@ -583,7 +583,7 @@ export default function DiffView({
               type="button"
               onClick={handleRefine}
               disabled={isRefining}
-              className="px-4 py-1.5 text-sm border border-green-500 text-green-600 rounded-lg hover:bg-green-50 dark:hover:bg-green-900/30 disabled:opacity-50 flex items-center gap-2"
+              className="px-4 py-1.5 text-sm border border-blue-500 text-blue-600 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/30 disabled:opacity-50 flex items-center gap-2"
             >
               {isRefining ? (
                 <>
@@ -929,7 +929,7 @@ export function SideBySideDiff({
               type="button"
               onClick={handleRefine}
               disabled={isRefining}
-              className="px-4 py-1.5 text-sm border border-green-500 text-green-600 rounded-lg hover:bg-green-50 dark:hover:bg-green-900/30 disabled:opacity-50 flex items-center gap-2"
+              className="px-4 py-1.5 text-sm border border-blue-500 text-blue-600 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/30 disabled:opacity-50 flex items-center gap-2"
             >
               {isRefining ? (
                 <>

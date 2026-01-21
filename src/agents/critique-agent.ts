@@ -527,9 +527,10 @@ export function buildDocumentContextPrompt(adjustments: DocumentAdjustments): st
   }
 
   // Framing guidance - filter out conflicting verbosity instructions
+  // Also limit to 8 items max to prevent prompt bloat
   if (adjustments.additionalFramingGuidance.length > 0) {
     // Filter out concise/terse guidance if verbosity is set to detailed
-    const filteredGuidance = adjustments.verbosityAdjust >= 0.5
+    let filteredGuidance = adjustments.verbosityAdjust >= 0.5
       ? adjustments.additionalFramingGuidance.filter(g => {
           const lower = g.toLowerCase();
           return !lower.includes('concise') &&
@@ -540,6 +541,9 @@ export function buildDocumentContextPrompt(adjustments: DocumentAdjustments): st
                  !lower.includes('word police');
         })
       : adjustments.additionalFramingGuidance;
+
+    // Hard limit to prevent prompt bloat
+    filteredGuidance = filteredGuidance.slice(0, 8);
 
     if (filteredGuidance.length > 0) {
       parts.push('DOCUMENT-SPECIFIC CONSTRAINTS:');
@@ -601,6 +605,7 @@ export function buildDocumentContextPrompt(adjustments: DocumentAdjustments): st
 
   // Learned rules - these come from user rejections and are CRITICAL
   // Present them with maximum emphasis since they represent user feedback
+  // Limit to 8 items max to prevent prompt bloat
   if (adjustments.learnedRules.length > 0) {
     parts.push('╔══════════════════════════════════════════════════════════════════╗');
     parts.push('║  ⚠️  MANDATORY RULES - LEARNED FROM USER REJECTIONS  ⚠️          ║');
@@ -610,8 +615,10 @@ export function buildDocumentContextPrompt(adjustments: DocumentAdjustments): st
     parts.push('FAILURE TO FOLLOW THESE RULES WILL RESULT IN REJECTION.');
     parts.push('');
 
-    // Sort by confidence, highest first
-    const sortedRules = [...adjustments.learnedRules].sort((a, b) => b.confidence - a.confidence);
+    // Sort by confidence, highest first, then limit to top 8
+    const sortedRules = [...adjustments.learnedRules]
+      .sort((a, b) => b.confidence - a.confidence)
+      .slice(0, 8);
 
     sortedRules.forEach((r, i) => {
       const priority = r.confidence >= 0.85 ? '🚨 [CRITICAL]' :

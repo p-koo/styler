@@ -5,6 +5,7 @@
  */
 
 import type { ProviderConfig, ChatMessage } from '@/types';
+import { loadConfig } from '@/memory/config-store';
 
 export interface CompletionOptions {
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
@@ -72,31 +73,37 @@ export async function createProvider(
 }
 
 /**
- * Get default provider config from environment
+ * Get default provider config from environment and config store
  * @param modelOverride - Optional model to use instead of the default
  */
 export function getDefaultProviderConfig(modelOverride?: string): ProviderConfig {
-  // Check for API keys in environment
-  if (process.env.OPENAI_API_KEY) {
+  // Load config from store (includes user-configured API keys)
+  const appConfig = loadConfig();
+
+  // Check for Anthropic API key (env takes precedence, then config store)
+  const anthropicKey = process.env.ANTHROPIC_API_KEY || appConfig.anthropicApiKey;
+  if (anthropicKey) {
     return {
-      type: 'openai',
-      apiKey: process.env.OPENAI_API_KEY,
-      model: modelOverride || process.env.OPENAI_MODEL || 'gpt-4o',
+      type: 'anthropic',
+      apiKey: anthropicKey,
+      model: modelOverride || process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514',
     };
   }
 
-  if (process.env.ANTHROPIC_API_KEY) {
+  // Check for OpenAI API key (env takes precedence, then config store)
+  const openaiKey = process.env.OPENAI_API_KEY || appConfig.openaiApiKey;
+  if (openaiKey) {
     return {
-      type: 'anthropic',
-      apiKey: process.env.ANTHROPIC_API_KEY,
-      model: modelOverride || process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514',
+      type: 'openai',
+      apiKey: openaiKey,
+      model: modelOverride || process.env.OPENAI_MODEL || 'gpt-4o',
     };
   }
 
   // Fall back to Ollama
   return {
     type: 'ollama',
-    baseUrl: process.env.OLLAMA_BASE_URL || 'http://localhost:11434',
+    baseUrl: process.env.OLLAMA_BASE_URL || appConfig.ollamaBaseUrl || 'http://localhost:11434',
     model: modelOverride || process.env.OLLAMA_MODEL || 'llama3.2',
   };
 }

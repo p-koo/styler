@@ -1,6 +1,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import Header from '@/components/Header';
+import ApiKeyWarning from '@/components/ApiKeyWarning';
 
 export default function Home() {
   return (
@@ -8,6 +9,7 @@ export default function Home() {
       <Header currentPage="home" />
 
       <main className="max-w-4xl mx-auto px-4 py-16">
+        <ApiKeyWarning className="mb-8" />
         {/* Hero Section */}
         <div className="text-center mb-12">
           <div className="flex items-center justify-center gap-4 mb-6">

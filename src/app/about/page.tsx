@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import Header from '@/components/Header';
+import ApiKeyWarning from '@/components/ApiKeyWarning';
 
 export default function AboutPage() {
   return (
@@ -10,6 +11,7 @@ export default function AboutPage() {
       <Header currentPage="about" />
 
       <main className="max-w-4xl mx-auto px-4 py-16">
+        <ApiKeyWarning className="mb-8" />
         {/* Header */}
         <div className="text-center mb-16">
           <h1 className="text-4xl font-bold text-[var(--foreground)] mb-4">How Styler Works</h1>

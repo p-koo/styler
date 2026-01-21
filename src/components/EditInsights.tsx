@@ -17,10 +17,24 @@ interface ConvergenceEntry {
   adjustmentsMade: string[];
 }
 
+interface CritiqueIssue {
+  type: string;
+  severity: 'minor' | 'moderate' | 'major';
+  description: string;
+}
+
+interface CritiqueAnalysis {
+  alignmentScore: number;
+  predictedAcceptance: number;
+  issues: CritiqueIssue[];
+  suggestions: string[];
+}
+
 interface EditInsightsProps {
   convergenceHistory: ConvergenceEntry[];
   agentTrace: AgentTraceEntry[];
   iterations: number;
+  critique?: CritiqueAnalysis;
 }
 
 // Agent display names and colors
@@ -34,7 +48,7 @@ const AGENT_CONFIG: Record<AgentTraceEntry['agent'], { name: string; color: stri
 /**
  * Visual display of edit alignment scores and agent activity
  */
-export default function EditInsights({ convergenceHistory, agentTrace, iterations }: EditInsightsProps) {
+export default function EditInsights({ convergenceHistory, agentTrace, iterations, critique }: EditInsightsProps) {
   const [expanded, setExpanded] = useState(false);
 
   // Get score color
@@ -178,6 +192,59 @@ export default function EditInsights({ convergenceHistory, agentTrace, iteration
               ))}
             </div>
           </div>
+
+          {/* Alignment Rationale */}
+          {critique && (critique.issues.length > 0 || critique.suggestions.length > 0) && (
+            <div>
+              <h4 className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                Alignment Rationale
+              </h4>
+
+              {/* Issues */}
+              {critique.issues.length > 0 && (
+                <div className="mb-2">
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-wide">Issues Found</span>
+                  <ul className="mt-1 space-y-1">
+                    {critique.issues.map((issue, i) => (
+                      <li key={i} className="flex items-start gap-2 text-[11px]">
+                        <span className={`flex-shrink-0 px-1.5 py-0.5 rounded text-[9px] font-medium ${
+                          issue.severity === 'major'
+                            ? 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300'
+                            : issue.severity === 'moderate'
+                              ? 'bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300'
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                        }`}>
+                          {issue.type.replace('_', ' ')}
+                        </span>
+                        <span className="text-slate-600 dark:text-slate-400">{issue.description}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Suggestions */}
+              {critique.suggestions.length > 0 && (
+                <div>
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-wide">Suggestions</span>
+                  <ul className="mt-1 space-y-1">
+                    {critique.suggestions.map((suggestion, i) => (
+                      <li key={i} className="text-[11px] text-slate-600 dark:text-slate-400 flex items-start gap-1.5">
+                        <span className="text-green-500">•</span>
+                        {suggestion}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {critique.issues.length === 0 && critique.suggestions.length === 0 && (
+                <p className="text-[11px] text-green-600 dark:text-green-400">
+                  No issues detected. Edit aligns well with your preferences.
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Total time */}
           <div className="text-[10px] text-slate-500 dark:text-slate-400 pt-2 border-t border-slate-200 dark:border-slate-700">

@@ -2551,6 +2551,7 @@ export default function EditorPage() {
                                 convergenceHistory={para.convergenceHistory}
                                 agentTrace={para.agentTrace}
                                 iterations={para.iterations || 1}
+                                critique={para.critique}
                               />
                             )}
 

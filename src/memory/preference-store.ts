@@ -13,6 +13,7 @@ import type {
   AudienceProfile,
   LearnedRule,
 } from '@/types';
+import { getDefaultProfiles } from './default-profiles';
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 const PREFERENCES_FILE = path.join(DATA_DIR, 'preferences.json');
@@ -37,11 +38,11 @@ const DEFAULT_BASE_STYLE: BaseStyle = {
   learnedRules: [],
 };
 
-// Default preference store
+// Default preference store with pre-configured profiles
 const DEFAULT_STORE: PreferenceStore = {
   version: SCHEMA_VERSION,
   baseStyle: DEFAULT_BASE_STYLE,
-  audienceProfiles: [],
+  audienceProfiles: getDefaultProfiles(),
   activeProfileId: null,
 };
 

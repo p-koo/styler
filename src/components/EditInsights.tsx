@@ -123,47 +123,6 @@ export default function EditInsights({ convergenceHistory, agentTrace, iteration
       {/* Expanded details */}
       {expanded && (
         <div className="p-3 bg-white dark:bg-slate-900 rounded-lg space-y-4 text-sm border border-slate-200 dark:border-slate-700">
-          {/* Score Progression Chart */}
-          {convergenceHistory.length > 0 && (
-            <div>
-              <h4 className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">
-                Alignment Score Progression
-              </h4>
-              <div className="flex items-end gap-2 h-16">
-                {convergenceHistory.map((entry, i) => {
-                  const heightPercent = entry.alignmentScore * 100;
-                  return (
-                    <div key={i} className="flex flex-col items-center flex-1 max-w-[60px]">
-                      <span className="text-[10px] text-slate-600 dark:text-slate-400 mb-1 font-medium">
-                        {Math.round(entry.alignmentScore * 100)}%
-                      </span>
-                      <div
-                        className={`w-full rounded-t ${getScoreColor(entry.alignmentScore)} transition-all shadow-sm`}
-                        style={{ height: `${Math.max(heightPercent * 0.5, 8)}px` }}
-                      />
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
-                        #{entry.attempt}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-              {/* Show adjustments made */}
-              {convergenceHistory.some(h => h.adjustmentsMade.length > 0) && (
-                <div className="mt-2 text-[10px] text-slate-600 dark:text-slate-400">
-                  {convergenceHistory.map((entry, i) => (
-                    entry.adjustmentsMade.length > 0 && entry.adjustmentsMade[0] !== 'Alignment threshold met' && (
-                      <div key={i}>
-                        <span className="font-medium">#{entry.attempt}:</span>{' '}
-                        {entry.adjustmentsMade.join(', ')}
-                      </div>
-                    )
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
           {/* Agent Timeline */}
           <div>
             <h4 className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">

@@ -76,9 +76,16 @@ function startNextServer() {
       USER_DATA_PATH: userDataPath
     };
 
-    nextServer = spawn(process.execPath.includes("Electron") ? "node" : process.execPath,
+    // Use Electron's node to run the server
+    // process.execPath points to Electron, but we can use the ELECTRON_RUN_AS_NODE env var
+    const nodeEnv = {
+      ...cleanEnv,
+      ELECTRON_RUN_AS_NODE: "1"
+    };
+
+    nextServer = spawn(process.execPath,
       [serverPath], {
-      env: cleanEnv,
+      env: nodeEnv,
       cwd: path.join(basePath, ".next", "standalone"),
       stdio: ["ignore", "pipe", "pipe"]
     });

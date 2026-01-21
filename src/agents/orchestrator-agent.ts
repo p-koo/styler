@@ -588,6 +588,11 @@ This is a code document. You MUST:
     contextParts.push('- Consider the CONTEXT: how this paragraph flows from the previous and into the next');
     contextParts.push('- Do NOT rewrite the entire paragraph unless explicitly asked');
     contextParts.push('- Do NOT add or remove content unless the instruction requires it');
+    contextParts.push('');
+    contextParts.push('CRITICAL: You must return the COMPLETE edited text.');
+    contextParts.push('- Even if the instruction only asks to edit part of the text (e.g., "fix the ending"), you must return the ENTIRE paragraph/text with that edit applied.');
+    contextParts.push('- NEVER return only the edited portion - always return the full text with edits incorporated.');
+    contextParts.push('- The original content that is NOT being edited must be preserved exactly as-is.');
   }
   contextParts.push('');
 
@@ -778,7 +783,8 @@ This is a code document. You MUST:
       contextParts.push('REMINDER: Output must be valid LaTeX. Include complete environment tags (\\begin{...} and \\end{...}).');
     }
   } else {
-    contextParts.push('Return ONLY the edited paragraph text. Do not include any explanation.');
+    contextParts.push('Return the COMPLETE edited text (not just the changed portion). Do not include any explanation.');
+    contextParts.push('IMPORTANT: Your output must contain the full text with edits applied - never just the edited part.');
     if (syntaxMode === 'latex') {
       contextParts.push('Preserve all LaTeX syntax and formatting.');
     }

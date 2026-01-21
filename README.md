@@ -4,173 +4,34 @@
 </p>
 
 <p align="center">
-  <strong>A document editor powered by ADAPT for style-aligned writing assistance</strong>
+  <strong>AI-powered document editing that learns your writing style</strong>
 </p>
 
 <p align="center">
-  <a href="#what-is-styler">What is Styler?</a> •
-  <a href="#adapt-architecture">ADAPT Architecture</a> •
-  <a href="#features">Features</a> •
+  <a href="#why-styler">Why Styler?</a> •
   <a href="#quick-start">Quick Start</a> •
-  <a href="#installation">Installation</a>
+  <a href="#how-it-works">How It Works</a> •
+  <a href="#features">Features</a> •
+  <a href="WHITEPAPER.md">Whitepaper</a> •
+  <a href="BLOG.md">Technical Blog</a>
 </p>
 
 ---
 
-## What is Styler?
+## Why Styler?
 
-Styler is a document editor that learns and adapts to your personal writing style. Unlike generic AI writing tools that apply one-size-fits-all edits, Styler maintains your authentic voice while improving clarity and consistency.
+Most AI writing tools have a problem: **they make everyone sound the same.**
 
-**Key capabilities:**
+When you ask ChatGPT to "improve" your writing, it applies its default preferences—certain hedging patterns, word choices, and formality levels. The result is polished but generic. It doesn't sound like *you*.
 
-- **Style Learning** — Import your writing history (ChatGPT exports, documents) to bootstrap your preferences
-- **Adaptive Editing** — Suggestions match your preferences for verbosity, formality, and tone
-- **Continuous Improvement** — The system learns from which edits you accept or reject
-- **Multi-Format Support** — LaTeX, Markdown, and plain text with syntax highlighting
+**Styler is different.** It learns your personal writing style and preserves it while improving clarity and flow.
 
----
-
-## ADAPT Architecture
-
-**ADAPT** stands for **Adaptive Document Alignment via Prompt Transformations**.
-
-It is a multi-agent system where specialized AI agents collaborate to produce style-aligned edit suggestions. Rather than sending your text directly to an LLM, ADAPT coordinates multiple agents that understand context, analyze intent, generate appropriate edits, and ensure quality through an iterative critique-and-refine process.
-
-### System Overview
-
-```
-┌───────────────────────┐       ┌───────────────────────┐
-│    Grant Call /       │       │    Audience Profile   │
-│    Style Guide        │       │    (from Settings)    │
-└───────────┬───────────┘       └───────────┬───────────┘
-            │                               │
-            ▼                               │
-┌───────────────────────┐                   │
-│ Constraint Extraction │                   │
-│ Agent                 │                   │
-└───────────┬───────────┘                   │
-            │                               │
-            ▼                               ▼
-┌─────────────────────────────────────────────────────────────┐
-│                      Document Profile                       │
-│                                                             │
-│  ┌───────────────┐ ┌───────────────┐ ┌───────────────────┐ │
-│  │ Style Sliders │ │ Words &       │ │ Document Goals    │ │
-│  │               │ │ Guidance      │ │ (Intent Agent     │ │
-│  │               │ │               │ │  synthesizes)     │ │
-│  └───────────────┘ └───────────────┘ └───────────────────┘ │
-└─────────────────────────────┬───────────────────────────────┘
-                              │
-            ┌─────────────────┴─────────────────┐
-            │                                   │
-            ▼                                   ▼
-┌───────────────────────┐       ┌───────────────────────┐
-│    User Input         │       │    Document Content   │
-│    (text+instruction) │       │                       │
-└───────────┬───────────┘       └───────────┬───────────┘
-            │                               │
-            └───────────────┬───────────────┘
-                            ▼
-┌─────────────────────────────────────────────────────────────┐
-│                     Orchestrator Agent                      │
-│                                                             │
-│  ┌───────────────────────────────────────────────────────┐ │
-│  │ 1. Intent Agent analyzes paragraph purpose            │ │
-│  │    (connects to document goals)                       │ │
-│  └───────────────────────────┬───────────────────────────┘ │
-│                              ▼                              │
-│  ┌───────────────┐     ┌───────────┐     ┌───────────────┐ │
-│  │ Prompt Agent  │────▶│    LLM    │────▶│Critique Agent │ │
-│  │               │     │  (edit)   │     │               │ │
-│  │ Builds prompt │     └───────────┘     │ Scores edit   │ │
-│  │ with style,   │                       │ alignment     │ │
-│  │ intent, goals │                       └───────┬───────┘ │
-│  └───────────────┘                               │         │
-│         ▲                                        │         │
-│         │            Refine if < 0.8             │         │
-│         └────────────────────────────────────────┘         │
-└─────────────────────────────┬───────────────────────────────┘
-                              │
-                              ▼
-                  ┌───────────────────────┐
-                  │    Suggested Edit     │
-                  └───────────┬───────────┘
-                              │
-                              ▼ User Accept/Reject
-                  ┌───────────────────────┐
-                  │    Learning Agent     │──▶ Updates Profile
-                  └───────────────────────┘
-```
-
-### Agent Roles
-
-| Agent | Role |
-|-------|------|
-| **Orchestrator Agent** | Coordinates the edit-critique-refine loop. Calls Intent Agent before editing. Manages up to 3 refinement iterations. |
-| **Intent Agent** | Synthesizes document goals from content. Analyzes each paragraph's purpose within document goals. Ensures edits preserve intent. |
-| **Prompt Agent** | Builds context-aware prompts including style preferences, document goals, paragraph intent, and section context. |
-| **Critique Agent** | Evaluates edit alignment (0-1 score). Identifies issues: verbosity, formality, word choice, tone. Triggers re-generation if score < 0.8. |
-| **Constraint Extraction Agent** | Parses grant calls, style guides, and author guidelines into structured rules. Extracts formatting requirements and tone expectations. |
-| **Learning Agent** | Records edit decisions. Learns from rejections (not accepts). Adjusts preferences based on explicit feedback. Consolidates rules. |
-
-### The Edit Flow
-
-1. **You select text and request an edit** — Click cells to select. Add optional instruction like "make more concise"
-2. **Intent Agent analyzes paragraph purpose** — How the paragraph connects to surrounding content and contributes to document goals
-3. **Prompt Agent builds a goal-aware prompt** — Style preferences, paragraph intent, document goals, and context are combined
-4. **LLM generates an initial edit** — Based on the constructed prompt, aligned with both style and intent
-5. **Critique Agent evaluates alignment** — Scores the edit, identifies issues if any
-6. **Refinement loop (if needed)** — If alignment < 0.8, the system refines using critique feedback (up to 3 iterations)
-7. **You review and decide** — See the diff, toggle individual changes, accept or reject. Your decision helps the system learn.
-
----
-
-## Features
-
-### Edit Modes
-
-| Mode | Description |
-|------|-------------|
-| **Styler Edit** | Single-cell editing with style alignment. Select a paragraph, get a style-matched suggestion. |
-| **Vibe Edit** | Document-level analysis. Select multiple cells or the whole document for holistic feedback on clarity, structure, and flow. |
-
-### Editor Features
-
-| Feature | Description |
-|---------|-------------|
-| **Document Goals** | Auto-synthesized objectives guide edits. Lock to prevent drift or edit manually. |
-| **Syntax Highlighting** | Auto-detects LaTeX and Markdown. Colors commands, math, headings, and formatting. |
-| **Smart Splitting** | Intelligently splits documents by syntax (LaTeX environments, Markdown sections, paragraphs). |
-| **Audience Profiles** | Create profiles for different contexts: journals, grants, blogs. Switch instantly. |
-| **Document Preferences** | Fine-tune verbosity, formality, and hedging per document with sliders. |
-| **Interactive Diffs** | Inline or side-by-side views. Toggle individual changes before accepting. |
-| **Version History** | Full undo/redo. Compare any two versions. |
-| **Dark Mode** | System, light, or dark theme. |
-| **Search** | Find text within documents. Navigate matches. |
-| **Auto-save** | Changes save automatically. |
-
-### Style Controls
-
-**Verbosity** (Terse ↔ Detailed)
-- Terse: Aggressive compression, 30-50% fewer words
-- Detailed: Expansion encouraged, add context/examples
-
-**Formality** (Casual ↔ Formal)
-- Casual: Contractions, first person, conversational
-- Formal: No contractions, third person, academic register
-
-**Hedging** (Confident ↔ Cautious)
-- Confident: Remove "may", "might", "suggests"
-- Cautious: Add qualifiers, acknowledge uncertainty
-
-### Adaptive Learning
-
-Styler learns from your feedback without memorizing specific word choices:
-
-- **Rejection feedback** — When you reject an edit, tell the system why (over-edited, changed meaning, wrong tone, etc.)
-- **Style pattern learning** — The system learns patterns like "prefers less formal tone" rather than specific word substitutions
-- **Rule consolidation** — Similar rules are merged into stronger, clearer directives
-- **Conservative word learning** — Words are only added to avoid lists after 5+ consistent rejections
+| Generic AI Tools | Styler |
+|------------------|--------|
+| One-size-fits-all edits | Learns your preferences |
+| Strips your voice | Preserves your voice |
+| No memory between sessions | Continuous learning |
+| Same output for everyone | Adapts to you |
 
 ---
 
@@ -181,54 +42,138 @@ Styler learns from your feedback without memorizing specific word choices:
 git clone https://github.com/p-koo/styler.git
 cd styler && npm install
 
-# Configure API key (at least one required)
+# Configure API key
 cp .env.example .env.local
-# Edit .env.local: ANTHROPIC_API_KEY=sk-ant-... or OPENAI_API_KEY=sk-...
+# Edit .env.local with your key:
+# ANTHROPIC_API_KEY=sk-ant-...  (recommended)
+# or OPENAI_API_KEY=sk-...
 
 # Run
 npm run dev
 # Open http://localhost:3000
 ```
 
+**Requirements:** Node.js 18+ and an API key from [Anthropic](https://console.anthropic.com/), [OpenAI](https://platform.openai.com/), or [Ollama](https://ollama.ai/) (free, local).
+
 ---
 
-## Installation
+## How It Works
 
-### Prerequisites
+Styler is powered by **ADAPT** (Adaptive Document Alignment via Prompt Transformations)—a multi-agent system that coordinates specialized AI agents.
 
-- **Node.js 18+** ([install guide](https://nodejs.org/))
-- **API Key** for at least one provider:
-  - [Anthropic](https://console.anthropic.com/) (Claude) — Recommended
-  - [OpenAI](https://platform.openai.com/) (GPT-4)
-  - [Ollama](https://ollama.ai/) (Local, free)
+### The Edit Loop
 
-### Setup
-
-```bash
-# Clone
-git clone https://github.com/p-koo/styler.git
-cd styler
-
-# Install dependencies
-npm install
-
-# Configure environment
-cp .env.example .env.local
+```
+You select text → Intent analysis → Generate edit → Critique → Refine → Present
+                                                      ↑          │
+                                                      └──────────┘
+                                                      (if score < 0.8)
 ```
 
-Edit `.env.local`:
-```env
-ANTHROPIC_API_KEY=sk-ant-...   # Recommended
-OPENAI_API_KEY=sk-...          # Alternative
-OLLAMA_BASE_URL=http://localhost:11434  # Optional, for local models
-```
+1. **Intent Agent** analyzes what the paragraph is trying to accomplish
+2. **Prompt Agent** builds a context-aware prompt with your style preferences
+3. **LLM** generates an edit aligned with your voice
+4. **Critique Agent** scores alignment (0-1) and identifies issues
+5. If score < 0.8, the system refines automatically (up to 3 times)
+6. You review the diff, toggle individual changes, and accept or reject
+7. **Learning Agent** updates your preferences based on your decision
 
-```bash
-# Start development server
-npm run dev
+### Three-Layer Preferences
 
-# Open http://localhost:3000
-```
+| Layer | Scope | What It Controls |
+|-------|-------|------------------|
+| **Base Style** | Global | Verbosity, formality, hedging, format rules |
+| **Audience Profiles** | Switchable | Context-specific overlays (academic, blog, business) |
+| **Document Adjustments** | Per-document | Fine-tuned sliders, learned rules, document goals |
+
+### Agents at a Glance
+
+| Agent | Purpose |
+|-------|---------|
+| **Orchestrator** | Coordinates the edit-critique-refine loop |
+| **Intent** | Analyzes document goals and paragraph purpose |
+| **Prompt** | Builds style-aware, context-rich prompts |
+| **Critique** | Evaluates edit quality, triggers refinement |
+| **Learning** | Updates preferences from your feedback |
+
+> **Deep Dive:** See the [Whitepaper](WHITEPAPER.md) for full architecture details or the [Technical Blog](BLOG.md) for a developer-focused walkthrough.
+
+---
+
+## Features
+
+### Edit Modes
+
+**Styler Edit** — Select a paragraph, add an optional instruction ("make concise"), get a style-matched suggestion.
+
+**Vibe Edit** — Apply vibes (Polish, Concise, Formal, Engaging, Academic) to multiple paragraphs or the whole document.
+
+### Interactive Editing
+
+- **Word-level diffs** — Toggle individual changes before accepting
+- **Iterative refinement** — Not satisfied? Add feedback, click Refine, get a better edit
+- **Quick feedback chips** — One-click feedback: "Too clunky", "Lost intent", "Too many edits"
+
+### Style Controls
+
+| Control | Range | Effect |
+|---------|-------|--------|
+| **Verbosity** | Terse ↔ Detailed | Compression vs. expansion |
+| **Formality** | Casual ↔ Formal | Contractions, register, tone |
+| **Hedging** | Confident ↔ Cautious | Qualifiers and uncertainty |
+
+### Document Intelligence
+
+- **Auto-synthesized goals** — System infers document objectives, guides all edits
+- **Paragraph intent** — Understands each paragraph's role in the document
+- **Section awareness** — Edits respect document structure
+
+### Format Support
+
+- **LaTeX** — Preserves commands, environments, math mode
+- **Markdown** — Maintains headers, lists, code blocks
+- **Smart splitting** — Syntax-aware document segmentation
+
+### Quality of Life
+
+- **Audience profiles** — Switch contexts instantly (journal → blog → grant)
+- **Version history** — Full undo/redo, compare any versions
+- **Auto-save** — Never lose work
+- **Dark mode** — System, light, or dark theme
+- **Local storage** — All data stays on your machine
+
+---
+
+## Learning System
+
+Styler learns from your feedback without memorizing specific word choices:
+
+| Signal | How It's Used |
+|--------|---------------|
+| **Rejection feedback** | "Too formal" → decrease formality preference |
+| **Partial accepts** | Toggled-off changes become avoid patterns |
+| **Decision history** | Patterns extracted across multiple edits |
+
+**Conservative by design:** Word avoidance rules require 5+ consistent rejections before activating. This prevents over-fitting to single decisions.
+
+---
+
+## Use Cases
+
+**Academic Writing**
+- Research papers with consistent voice across sections
+- Grant proposals with appropriate hedging for reviewers
+- Thesis chapters that maintain your style
+
+**Professional Documents**
+- Technical docs with standardized terminology
+- Reports matching organizational style guides
+- Proposals calibrated for different audiences
+
+**Content Creation**
+- Blog posts that sound like you
+- Documentation with consistent technical writing
+- Batch editing across multiple documents
 
 ---
 
@@ -239,26 +184,20 @@ src/
 ├── agents/                    # ADAPT multi-agent system
 │   ├── orchestrator-agent.ts  # Main coordination loop
 │   ├── intent-agent.ts        # Document goals & paragraph intent
-│   ├── critique-agent.ts      # Edit quality evaluation & learning
+│   ├── critique-agent.ts      # Edit evaluation & learning
 │   ├── prompt-agent.ts        # Style-aware prompt building
 │   └── constraint-extraction-agent.ts
 ├── app/
-│   ├── api/                   # API routes
-│   │   └── documents/[id]/goals/  # Goals synthesis endpoint
 │   ├── editor/                # Main editor page
-│   ├── settings/              # Configuration
-│   └── about/                 # About page with architecture details
+│   ├── settings/              # Global configuration
+│   └── api/                   # API routes
 ├── components/
-│   ├── CodeMirrorEditor.tsx   # Syntax-highlighted editor
-│   ├── SyntaxHighlighter.tsx  # Display highlighting
-│   ├── DiffView.tsx           # Inline + side-by-side diffs
-│   ├── FeedbackPanel.tsx      # Document review & feedback
-│   └── DocumentProfilePanel.tsx  # Per-document preferences + goals
+│   ├── DiffView.tsx           # Interactive diff display
+│   ├── DocumentProfilePanel.tsx  # Per-document preferences
+│   └── ...
 ├── memory/                    # Preference storage
 │   ├── preference-store.ts    # Global preferences
 │   └── document-preferences.ts  # Document-specific learning
-├── utils/                     # Utilities
-│   └── smart-split.ts         # Syntax-aware document splitting
 └── providers/                 # LLM integrations
     ├── anthropic.ts
     ├── openai.ts
@@ -267,32 +206,21 @@ src/
 
 ---
 
-## Use Cases
-
-**Academic Writing**
-- Research papers: Consistent style across sections
-- Grant proposals: Appropriate tone and hedging for reviewers
-- Thesis: Voice consistency across chapters
-
-**Professional Documents**
-- Technical documentation: Standardized terminology
-- Reports: Match organizational style standards
-- Proposals: Calibrate for different audiences
-
-**Content Creation**
-- Blog posts: Maintain personal voice
-- Documentation: Consistent technical writing
-- Editing: Batch improvements across documents
-
----
-
-## Technology Stack
+## Tech Stack
 
 | Category | Technologies |
 |----------|-------------|
-| **Frontend** | Next.js 15, React 19, TypeScript, Tailwind CSS, CodeMirror 6 |
-| **AI Providers** | Anthropic (Claude), OpenAI (GPT-4), Ollama (Local) |
-| **Features** | Server Components, API Routes, File-based Storage, Real-time Auto-save |
+| **Frontend** | Next.js 15, React 19, TypeScript, Tailwind CSS |
+| **Editor** | CodeMirror 6 with syntax highlighting |
+| **AI** | Anthropic Claude, OpenAI GPT-4, Ollama |
+| **Storage** | Local JSON files (no cloud dependency) |
+
+---
+
+## Documentation
+
+- **[Whitepaper](WHITEPAPER.md)** — Comprehensive system documentation
+- **[Technical Blog](BLOG.md)** — Developer-focused architecture walkthrough
 
 ---
 

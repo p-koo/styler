@@ -10,7 +10,7 @@
     "lint": "next lint",
     "bootstrap": "npx tsx src/bootstrap/cli.ts",
     "electron:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:3000 && NODE_ENV=development electron .\"",
-    "electron:build": "next build && electron-builder",
+    "electron:build": "node -e \"const fs=require('fs'); if(fs.existsSync('.env')){fs.renameSync('.env','.env.bak')}\" && next build && node -e \"const fs=require('fs'); if(fs.existsSync('.env.bak')){fs.renameSync('.env.bak','.env')}\" && electron-builder",
     "electron:build:mac": "next build && electron-builder --mac",
     "electron:build:win": "next build && electron-builder --win",
     "electron:build:linux": "next build && electron-builder --linux"

@@ -53,7 +53,56 @@ npm run dev
 # Open http://localhost:3000
 ```
 
-**Requirements:** Node.js 18+ and an API key from [Anthropic](https://console.anthropic.com/), [OpenAI](https://platform.openai.com/), or [Ollama](https://ollama.ai/) (free, local).
+---
+
+## Requirements
+
+### System Requirements
+- **Node.js 18+** — [Download](https://nodejs.org/)
+- **npm** or **yarn** — Comes with Node.js
+
+### API Keys (at least one required)
+| Provider | Get API Key | Notes |
+|----------|-------------|-------|
+| **Anthropic** (recommended) | [console.anthropic.com](https://console.anthropic.com/) | Claude models, best quality |
+| **OpenAI** | [platform.openai.com](https://platform.openai.com/) | GPT-4 models |
+| **Ollama** | [ollama.ai](https://ollama.ai/) | Free, runs locally |
+
+### Key Dependencies
+
+| Package | Version | Purpose |
+|---------|---------|---------|
+| Next.js | 16.x | React framework |
+| React | 19.x | UI library |
+| TypeScript | 5.x | Type safety |
+| Tailwind CSS | 4.x | Styling |
+| CodeMirror | 6.x | Text editor |
+| Anthropic SDK | 0.71.x | Claude API |
+| OpenAI SDK | 6.x | GPT API |
+
+<details>
+<summary>Full dependency list</summary>
+
+```json
+{
+  "@anthropic-ai/sdk": "^0.71.2",
+  "@codemirror/commands": "^6.10.1",
+  "@codemirror/lang-markdown": "^6.5.0",
+  "@codemirror/language": "^6.12.1",
+  "@codemirror/language-data": "^6.5.2",
+  "@codemirror/legacy-modes": "^6.5.2",
+  "@codemirror/state": "^6.5.4",
+  "@codemirror/theme-one-dark": "^6.1.3",
+  "@codemirror/view": "^6.39.11",
+  "next": "^16.1.3",
+  "openai": "^6.16.0",
+  "react": "^19.2.3",
+  "react-dom": "^19.2.3",
+  "tailwindcss": "^4.1.18",
+  "typescript": "^5.9.3"
+}
+```
+</details>
 
 ---
 

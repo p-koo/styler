@@ -106,6 +106,7 @@ export async function POST(request: NextRequest) {
       } : result.critique,
       iterations: result.iterations,
       convergenceHistory: result.convergenceHistory,
+      agentTrace: result.agentTrace,
       documentPreferences: {
         adjustments: result.documentPreferences.adjustments,
         editCount: result.documentPreferences.editHistory.length,

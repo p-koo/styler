@@ -41,6 +41,15 @@ const CONFIG = {
   },
 };
 
+// Agent trace for transparency/debugging
+export interface AgentTraceEntry {
+  agent: 'intent' | 'prompt' | 'llm' | 'critique';
+  timestamp: number;
+  durationMs: number;
+  summary: string;
+  details?: Record<string, unknown>;
+}
+
 export interface OrchestrationResult {
   editedText: string;
   originalText: string;
@@ -53,6 +62,7 @@ export interface OrchestrationResult {
     alignmentScore: number;
     adjustmentsMade: string[];
   }>;
+  agentTrace: AgentTraceEntry[];
 }
 
 export type SyntaxMode = 'plain' | 'markdown' | 'latex' | 'code';
@@ -120,6 +130,7 @@ export async function orchestrateEdit(
   );
 
   const convergenceHistory: OrchestrationResult['convergenceHistory'] = [];
+  const agentTrace: AgentTraceEntry[] = [];
   let bestEdit = currentCell;
   let bestCritique: CritiqueAnalysis = {
     alignmentScore: 0,
@@ -142,6 +153,7 @@ export async function orchestrateEdit(
 
   // Analyze paragraph intent (considers document goals)
   let paragraphIntent: ParagraphIntent | undefined;
+  const intentStartTime = Date.now();
   try {
     const previousParagraph = cellIndex > 0 ? cells[cellIndex - 1] : undefined;
     const nextParagraph = cellIndex < cells.length - 1 ? cells[cellIndex + 1] : undefined;
@@ -156,8 +168,29 @@ export async function orchestrateEdit(
       documentTitle: documentStructure?.title,
       model,
     });
+
+    agentTrace.push({
+      agent: 'intent',
+      timestamp: intentStartTime,
+      durationMs: Date.now() - intentStartTime,
+      summary: paragraphIntent?.purpose
+        ? `Identified purpose: ${paragraphIntent.purpose.slice(0, 60)}${paragraphIntent.purpose.length > 60 ? '...' : ''}`
+        : 'Analyzed paragraph intent',
+      details: {
+        purpose: paragraphIntent?.purpose,
+        connectionToPrevious: paragraphIntent?.connectionToPrevious,
+        roleInGoals: paragraphIntent?.roleInGoals,
+      },
+    });
   } catch (error) {
     console.error('Intent analysis error:', error);
+    agentTrace.push({
+      agent: 'intent',
+      timestamp: intentStartTime,
+      durationMs: Date.now() - intentStartTime,
+      summary: 'Intent analysis failed (non-critical)',
+      details: { error: String(error) },
+    });
     // Continue without intent - it's not critical
   }
 
@@ -210,6 +243,9 @@ export async function orchestrateEdit(
       previousIssues = bestCritique.issues;
     }
 
+    // Track Prompt Agent (happens inside generateEdit, but we trace the whole generation)
+    const promptStartTime = Date.now();
+
     // Generate edit with current preferences
     const editedText = await generateEdit({
       cells,
@@ -228,7 +264,35 @@ export async function orchestrateEdit(
       userRefinementFeedback: refinementContext?.userFeedback,
     });
 
+    const llmDuration = Date.now() - promptStartTime;
+    agentTrace.push({
+      agent: 'prompt',
+      timestamp: promptStartTime,
+      durationMs: Math.round(llmDuration * 0.1), // ~10% is prompt building
+      summary: `Built prompt for attempt ${attempt}${instruction ? ` with instruction: "${instruction.slice(0, 50)}${instruction.length > 50 ? '...' : ''}"` : ''}`,
+      details: {
+        attempt,
+        hasInstruction: !!instruction,
+        hasPreviousAttempt: !!previousAttempt,
+        issueCount: previousIssues?.length || 0,
+      },
+    });
+
+    agentTrace.push({
+      agent: 'llm',
+      timestamp: promptStartTime + Math.round(llmDuration * 0.1),
+      durationMs: Math.round(llmDuration * 0.9), // ~90% is LLM generation
+      summary: `Generated edit (${editedText.length} chars)`,
+      details: {
+        attempt,
+        inputLength: currentCell.length,
+        outputLength: editedText.length,
+        model: model || 'default',
+      },
+    });
+
     // Critique the edit
+    const critiqueStartTime = Date.now();
     const critique = await critiqueEdit({
       originalText: currentCell,
       suggestedEdit: editedText,
@@ -237,6 +301,20 @@ export async function orchestrateEdit(
       documentPreferences: documentPrefs,
       sectionType: currentSection?.type,
       model,
+    });
+
+    agentTrace.push({
+      agent: 'critique',
+      timestamp: critiqueStartTime,
+      durationMs: Date.now() - critiqueStartTime,
+      summary: `Scored ${Math.round(critique.alignmentScore * 100)}% alignment${critique.issues.length > 0 ? `, ${critique.issues.length} issue${critique.issues.length > 1 ? 's' : ''}` : ''}`,
+      details: {
+        attempt,
+        alignmentScore: critique.alignmentScore,
+        predictedAcceptance: critique.predictedAcceptance,
+        issueCount: critique.issues.length,
+        issueTypes: critique.issues.map(i => i.type),
+      },
     });
 
     // Track this attempt
@@ -317,6 +395,7 @@ export async function orchestrateEdit(
     iterations,
     documentPreferences: latestPrefs,
     convergenceHistory,
+    agentTrace,
   };
 }
 

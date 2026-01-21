@@ -5,6 +5,7 @@ import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import DiffView, { SideBySideDiff, type FeedbackType, type RejectFeedback, type RefinementContext } from '@/components/DiffView';
 import CritiqueBadge from '@/components/CritiqueBadge';
+import EditInsights from '@/components/EditInsights';
 import DocumentProfilePanel from '@/components/DocumentProfilePanel';
 import FeedbackPanel, { type FeedbackPanelState, DEFAULT_FEEDBACK_STATE } from '@/components/FeedbackPanel';
 import SyntaxHighlighter, { type HighlightMode } from '@/components/SyntaxHighlighter';
@@ -44,6 +45,15 @@ interface DocumentStructure {
   mainArgument: string;
 }
 
+// Agent trace type (matches orchestrator)
+interface AgentTraceEntry {
+  agent: 'intent' | 'prompt' | 'llm' | 'critique';
+  timestamp: number;
+  durationMs: number;
+  summary: string;
+  details?: Record<string, unknown>;
+}
+
 interface Cell {
   id: string;
   index: number;
@@ -59,6 +69,7 @@ interface Cell {
     alignmentScore: number;
     adjustmentsMade: string[];
   }>;
+  agentTrace?: AgentTraceEntry[]; // Trace of agent activity
   documentProfileApplied?: boolean; // Whether document-specific profile was used
   // Batch edit per-cell tracking
   batchEditStatus?: 'modified' | 'removed' | 'unchanged'; // Status in batch edit
@@ -731,6 +742,7 @@ export default function EditorPage() {
                 critique: data.critique, // Include critique for alignment score
                 iterations: data.iterations,
                 convergenceHistory: data.convergenceHistory,
+                agentTrace: data.agentTrace,
                 // Store original cells for splitting on accept and restore on reject
                 originalMergedCells: originalCells,
                 mergedFromIndices: selectedIndices,
@@ -795,6 +807,7 @@ export default function EditorPage() {
             critique: data.critique,
             iterations: data.iterations,
             convergenceHistory: data.convergenceHistory,
+            agentTrace: data.agentTrace,
             documentProfileApplied: data.documentPreferences?.applied,
           };
           return updated;
@@ -886,6 +899,7 @@ export default function EditorPage() {
             critique: data.critique,
             iterations: data.iterations,
             convergenceHistory: data.convergenceHistory,
+            agentTrace: data.agentTrace,
             documentProfileApplied: data.documentPreferences?.applied,
           };
           return updated;
@@ -1084,6 +1098,7 @@ export default function EditorPage() {
               critique: undefined,
               iterations: undefined,
               convergenceHistory: undefined,
+              agentTrace: undefined,
               editAccepted: true,
               batchEditStatus: undefined,
               batchEditContent: undefined,
@@ -1202,6 +1217,7 @@ export default function EditorPage() {
             critique: undefined,
             iterations: undefined,
             convergenceHistory: undefined,
+            agentTrace: undefined,
             originalBatchContent: undefined,
             batchEditStatus: undefined,
             batchEditContent: undefined,
@@ -1331,6 +1347,10 @@ export default function EditorPage() {
           convergenceHistory: [
             ...(currentCell.convergenceHistory || []),
             ...(data.convergenceHistory || []),
+          ],
+          agentTrace: [
+            ...(currentCell.agentTrace || []),
+            ...(data.agentTrace || []),
           ],
           // Explicitly preserve multi-cell edit metadata
           originalMergedCells: currentCell.originalMergedCells,
@@ -2522,34 +2542,38 @@ export default function EditorPage() {
                       {/* Show diff if edited, batch edit status, direct edit mode, or normal content */}
                       {para.edited ? (
                         <div className="space-y-2">
-                          {/* Show critique badge, iterations, and batch edit indicator */}
-                          <div className="flex items-center gap-2 px-3 py-1.5 flex-wrap">
-                            {para.critique && (
+                          {/* Show edit insights with score progression and agent timeline */}
+                          <div className="px-3 py-1.5 space-y-2">
+                            {/* Edit Insights: Score progression + Agent timeline */}
+                            {para.convergenceHistory && para.convergenceHistory.length > 0 && para.agentTrace && para.agentTrace.length > 0 && (
+                              <EditInsights
+                                convergenceHistory={para.convergenceHistory}
+                                agentTrace={para.agentTrace}
+                                iterations={para.iterations || 1}
+                              />
+                            )}
+
+                            {/* Fallback: Show critique badge if no agent trace (shouldn't happen normally) */}
+                            {para.critique && (!para.agentTrace || para.agentTrace.length === 0) && (
                               <CritiqueBadge critique={para.critique} />
                             )}
-                            {para.iterations && para.iterations > 1 && (
-                              <span
-                                className="px-2 py-0.5 bg-purple-50 text-purple-600 text-xs rounded"
-                                title={para.convergenceHistory?.map(h =>
-                                  `Attempt ${h.attempt}: ${Math.round(h.alignmentScore * 100)}%`
-                                ).join('\n')}
-                              >
-                                {para.iterations} iterations
-                              </span>
-                            )}
-                            {para.documentProfileApplied && (
-                              <span
-                                className="px-2 py-0.5 bg-indigo-50 text-indigo-600 text-xs rounded"
-                                title="Document-specific preferences were applied to this edit"
-                              >
-                                Doc Profile
-                              </span>
-                            )}
-                            {para.originalBatchContent && (
-                              <span className="text-blue-700 dark:text-blue-300 text-xs">
-                                Multi-cell edit
-                              </span>
-                            )}
+
+                            {/* Additional badges */}
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {para.documentProfileApplied && (
+                                <span
+                                  className="px-2 py-0.5 bg-indigo-50 text-indigo-600 text-xs rounded"
+                                  title="Document-specific preferences were applied to this edit"
+                                >
+                                  Doc Profile
+                                </span>
+                              )}
+                              {para.originalBatchContent && (
+                                <span className="text-blue-700 dark:text-blue-300 text-xs">
+                                  Multi-cell edit
+                                </span>
+                              )}
+                            </div>
                           </div>
                           {diffMode === 'inline' ? (
                             <DiffView

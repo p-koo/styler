@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import Image from 'next/image';
 import Link from 'next/link';
 import Header from '@/components/Header';
 
@@ -13,282 +12,172 @@ export default function AboutPage() {
       <main className="max-w-4xl mx-auto px-4 py-16">
         {/* Header */}
         <div className="text-center mb-12">
-          <h1 className="text-4xl font-bold text-[var(--foreground)] mb-4">About Styler</h1>
+          <h1 className="text-4xl font-bold text-[var(--foreground)] mb-4">How Styler Works</h1>
           <p className="text-lg text-[var(--muted-foreground)]">
-            A document editor powered by ADAPT for style-aligned writing assistance
+            A multi-agent system that learns your writing style
           </p>
         </div>
 
-        {/* What is Styler */}
+        {/* The Problem */}
         <section className="mb-12">
-          <h2 className="text-2xl font-semibold text-[var(--foreground)] mb-4">What is Styler?</h2>
-          <div className="space-y-4 text-[var(--muted-foreground)]">
-            <p>
-              Styler is a document editor that uses <strong className="text-[var(--foreground)]">ADAPT (Adaptive Document Alignment via Prompt Transformations)</strong>,
-              a multi-agent system for adaptive document alignment via prompt transformations, to align LLM-guided edits with your personal writing style.
-            </p>
-            <p>
-              Unlike generic AI writing tools that apply one-size-fits-all edits, Styler learns your unique
-              voice and adapts its suggestions to match your personal style. The ADAPT system uses a coordinated architecture of specialized AI agents that work together to
-              understand context, generate appropriate edits, and ensure quality through an iterative
-              critique-and-refine process.
-            </p>
-          </div>
+          <h2 className="text-2xl font-semibold text-[var(--foreground)] mb-4">The Problem</h2>
+          <p className="text-[var(--muted-foreground)]">
+            When you ask ChatGPT to "improve" your writing, it applies its default preferences—certain hedging patterns, word choices, and formality levels. The result is polished but generic. <strong className="text-[var(--foreground)]">It doesn't sound like you.</strong>
+          </p>
         </section>
 
-        {/* Architecture Diagram */}
+        {/* The Solution */}
         <section className="mb-12">
-          <h2 className="text-2xl font-semibold text-[var(--foreground)] mb-4">
-            ADAPT: Adaptive Document Alignment via Prompt Transformations
-          </h2>
+          <h2 className="text-2xl font-semibold text-[var(--foreground)] mb-4">The Solution: ADAPT</h2>
           <p className="text-[var(--muted-foreground)] mb-6">
-            When you request an edit, ADAPT's specialized agents collaborate to produce style-aligned suggestions:
+            <strong className="text-[var(--foreground)]">ADAPT</strong> (Adaptive Document Alignment via Prompt Transformations) is a multi-agent system that coordinates specialized AI agents to understand your style, analyze document intent, generate aligned edits, and learn from your feedback.
           </p>
 
-          {/* Visual Architecture Diagram */}
-          <div className="bg-[var(--muted)] rounded-lg p-6 mb-6 overflow-x-auto">
-            <pre className="text-xs sm:text-sm font-mono text-[var(--foreground)] whitespace-pre leading-relaxed">
-{`┌───────────────────────┐       ┌───────────────────────┐
-│    Grant Call /       │       │    Audience Profile   │
-│    Style Guide        │       │    (from Settings)    │
-└───────────┬───────────┘       └───────────┬───────────┘
-            │                               │
-            ▼                               │
-┌───────────────────────┐                   │
-│ Constraint Extraction │                   │
-│ Agent                 │                   │
-└───────────┬───────────┘                   │
-            │                               │
-            ▼                               ▼
-┌─────────────────────────────────────────────────────────────┐
-│                      Document Profile                       │
-│                                                             │
-│  ┌───────────────┐ ┌───────────────┐ ┌───────────────────┐ │
-│  │ Style Sliders │ │ Words &       │ │ Document Goals    │ │
-│  │               │ │ Guidance      │ │ (Intent Agent     │ │
-│  │               │ │               │ │  synthesizes)     │ │
-│  └───────────────┘ └───────────────┘ └───────────────────┘ │
-└─────────────────────────────┬───────────────────────────────┘
-                              │
-            ┌─────────────────┴─────────────────┐
-            │                                   │
-            ▼                                   ▼
-┌───────────────────────┐       ┌───────────────────────┐
-│    User Input         │       │    Document Content   │
-│    (text+instruction) │       │                       │
-└───────────┬───────────┘       └───────────┬───────────┘
-            │                               │
-            └───────────────┬───────────────┘
-                            ▼
-┌─────────────────────────────────────────────────────────────┐
-│                     Orchestrator Agent                      │
-│                                                             │
-│  ┌───────────────────────────────────────────────────────┐ │
-│  │ 1. Intent Agent analyzes paragraph purpose            │ │
-│  │    (connects to document goals)                       │ │
-│  └───────────────────────────┬───────────────────────────┘ │
-│                              ▼                              │
-│  ┌───────────────┐     ┌───────────┐     ┌───────────────┐ │
-│  │ Prompt Agent  │────▶│    LLM    │────▶│Critique Agent │ │
-│  │               │     │  (edit)   │     │               │ │
-│  │ Builds prompt │     └───────────┘     │ Scores edit   │ │
-│  │ with style,   │                       │ alignment     │ │
-│  │ intent, goals │                       └───────┬───────┘ │
-│  └───────────────┘                               │         │
-│         ▲                                        │         │
-│         │            Refine if < 0.8             │         │
-│         └────────────────────────────────────────┘         │
-└─────────────────────────────┬───────────────────────────────┘
-                              │
-                              ▼
-                  ┌───────────────────────┐
-                  │    Suggested Edit     │
-                  └───────────┬───────────┘
-                              │
-                              ▼ User Accept/Reject
-                  ┌───────────────────────┐
-                  │    Learning Agent     │──▶ Updates Profile
-                  └───────────────────────┘`}
+          {/* Simple Flow Diagram */}
+          <div className="bg-[var(--muted)] rounded-lg p-6 mb-6">
+            <pre className="text-sm font-mono text-[var(--foreground)] whitespace-pre leading-relaxed text-center">
+{`Select text → Intent Analysis → Generate Edit → Critique → Present
+                                      ↑              │
+                                      └──────────────┘
+                                      Refine if score < 0.8`}
             </pre>
           </div>
         </section>
 
-        {/* Agent Details with Expandable Sections */}
+        {/* The Agents */}
         <section className="mb-12">
-          <h2 className="text-2xl font-semibold text-[var(--foreground)] mb-4">How Each Agent Works</h2>
+          <h2 className="text-2xl font-semibold text-[var(--foreground)] mb-4">The Agents</h2>
           <p className="text-[var(--muted-foreground)] mb-6">
-            Click on each agent to learn more about its role in the system:
+            Five specialized agents work together:
           </p>
 
           <div className="space-y-3">
-            <AgentDetail
-              name="Orchestrator Agent"
-              icon="🎯"
-              summary="Coordinates the entire edit-critique-refine loop"
-              details={[
-                "Receives user input (selected text + optional instruction)",
-                "Calls Intent Agent to analyze paragraph purpose before editing",
-                "Manages up to 3 refinement iterations if quality threshold isn't met",
-                "Tracks convergence history and alignment scores",
-                "Returns the best edit with critique analysis attached"
-              ]}
+            <AgentCard
+              name="Orchestrator"
+              role="Coordinates the edit-critique-refine loop"
+              details="Manages up to 3 refinement iterations. Returns the best edit with alignment score."
             />
-
-            <AgentDetail
+            <AgentCard
               name="Intent Agent"
-              icon="🎪"
-              summary="Analyzes paragraph intent and synthesizes document goals"
-              details={[
-                "Synthesizes document goals from content (summary, objectives, main argument)",
-                "Analyzes each paragraph's purpose within the document's goals",
-                "Identifies how paragraphs connect to previous/next content",
-                "Ensures edits preserve the paragraph's role in achieving document goals",
-                "Goals can be locked by user to prevent auto-updates"
-              ]}
+              role="Analyzes paragraph purpose and document goals"
+              details="Ensures edits preserve what each paragraph is trying to accomplish within the document."
             />
-
-            <AgentDetail
+            <AgentCard
               name="Prompt Agent"
-              icon="📝"
-              summary="Builds context-aware prompts from your style preferences"
-              details={[
-                "Combines base style settings (verbosity, formality, hedging)",
-                "Includes document goals and paragraph intent from Intent Agent",
-                "Merges audience profile preferences (jargon level, emphasis points)",
-                "Applies document-specific adjustments from sliders",
-                "Adds section-specific guidance and surrounding context"
-              ]}
+              role="Builds style-aware, context-rich prompts"
+              details="Combines your preferences, document goals, paragraph intent, and section context."
             />
-
-            <AgentDetail
+            <AgentCard
               name="Critique Agent"
-              icon="🔍"
-              summary="Evaluates edit alignment and suggests improvements"
-              details={[
-                "Scores alignment from 0-1 based on style match",
-                "Identifies specific issues: verbosity, formality, word choice, tone",
-                "Suggests concrete improvements for refinement",
-                "Predicts likelihood of user acceptance",
-                "Triggers re-generation if score < 0.8 threshold"
-              ]}
+              role="Evaluates edit alignment (0-1 score)"
+              details="Identifies issues: verbosity, formality, word choice, tone. Triggers refinement if needed."
             />
-
-            <AgentDetail
-              name="Constraint Extraction Agent"
-              icon="📋"
-              summary="Parses grant calls and style guides into structured rules"
-              details={[
-                "Analyzes uploaded documents (grant calls, author guidelines)",
-                "Extracts page limits, word counts, formatting requirements",
-                "Identifies tone and style expectations",
-                "Converts free-text guidelines into structured constraints",
-                "Merges extracted constraints into document profile"
-              ]}
-            />
-
-            <AgentDetail
+            <AgentCard
               name="Learning Agent"
-              icon="🧠"
-              summary="Learns from your accept/reject decisions over time"
-              details={[
-                "Records every edit decision with full context",
-                "Analyzes patterns in rejected edits (not accepts, to avoid overfitting)",
-                "Adjusts document preferences based on explicit feedback",
-                "Consolidates similar rules into stronger directives",
-                "Can merge learned preferences back to audience profiles"
-              ]}
+              role="Learns from your accept/reject decisions"
+              details="Analyzes patterns in rejections (not accepts). Adjusts preferences based on feedback."
             />
           </div>
         </section>
 
-        {/* The Edit Flow */}
+        {/* Three-Layer Preferences */}
         <section className="mb-12">
-          <h2 className="text-2xl font-semibold text-[var(--foreground)] mb-4">The Edit Flow</h2>
+          <h2 className="text-2xl font-semibold text-[var(--foreground)] mb-4">Three-Layer Preferences</h2>
+          <p className="text-[var(--muted-foreground)] mb-6">
+            Your style isn't one-dimensional. Styler models preferences at three levels:
+          </p>
+
           <div className="space-y-4">
-            <FlowStep
-              number={1}
-              title="You select text and request an edit"
-              description="Click cells to select them. Optionally add an instruction like 'make more concise' or 'add hedging'."
+            <PreferenceLayer
+              name="Base Style"
+              scope="Global"
+              description="Verbosity, formality, hedging, format rules"
             />
-            <FlowStep
-              number={2}
-              title="Intent Agent analyzes paragraph purpose"
-              description="The paragraph's role is analyzed within the document's goals—how it connects to surrounding content and contributes to objectives."
+            <PreferenceLayer
+              name="Audience Profiles"
+              scope="Switchable"
+              description="Context-specific overlays (academic, blog, business)"
             />
-            <FlowStep
-              number={3}
-              title="Prompt Agent builds a goal-aware prompt"
-              description="Your preferences, paragraph intent, document goals, and context are combined into a comprehensive prompt."
-            />
-            <FlowStep
-              number={4}
-              title="LLM generates an initial edit"
-              description="The language model produces an edit suggestion that aligns with both style preferences and document goals."
-            />
-            <FlowStep
-              number={5}
-              title="Critique Agent evaluates alignment"
-              description="The edit is scored for style alignment. If below threshold, specific issues are identified."
-            />
-            <FlowStep
-              number={6}
-              title="Refinement loop (if needed)"
-              description="If alignment < 0.8, the system refines the edit using critique feedback. Up to 3 iterations."
-            />
-            <FlowStep
-              number={7}
-              title="You review and decide"
-              description="See the diff, toggle individual changes, then accept or reject. Your decision helps the system learn."
+            <PreferenceLayer
+              name="Document Adjustments"
+              scope="Per-document"
+              description="Fine-tuned sliders, learned rules, document goals"
             />
           </div>
         </section>
 
-        {/* Key Features */}
+        {/* Learning */}
         <section className="mb-12">
-          <h2 className="text-2xl font-semibold text-[var(--foreground)] mb-4">Key Features</h2>
+          <h2 className="text-2xl font-semibold text-[var(--foreground)] mb-4">How It Learns</h2>
+          <p className="text-[var(--muted-foreground)] mb-6">
+            Styler learns from your feedback without memorizing specific word choices:
+          </p>
+
+          <div className="grid md:grid-cols-3 gap-4">
+            <LearningCard
+              title="Rejection Feedback"
+              description="When you reject and say 'too formal', formality preference decreases"
+            />
+            <LearningCard
+              title="Partial Accepts"
+              description="Toggled-off changes become avoid patterns after repeated rejections"
+            />
+            <LearningCard
+              title="Pattern Analysis"
+              description="Periodic analysis extracts higher-level rules from decision history"
+            />
+          </div>
+
+          <p className="text-sm text-[var(--muted-foreground)] mt-4">
+            <strong>Conservative by design:</strong> Word avoidance rules require 5+ consistent rejections before activating.
+          </p>
+        </section>
+
+        {/* Interactive Features */}
+        <section className="mb-12">
+          <h2 className="text-2xl font-semibold text-[var(--foreground)] mb-4">Interactive Editing</h2>
           <div className="grid md:grid-cols-2 gap-4">
             <FeatureCard
+              title="Word-Level Diffs"
+              description="See exactly what changed. Toggle individual changes before accepting."
+            />
+            <FeatureCard
+              title="Iterative Refinement"
+              description="Not satisfied? Add feedback, click Refine, get a better edit."
+            />
+            <FeatureCard
+              title="Quick Feedback"
+              description="One-click feedback chips: 'Too clunky', 'Lost intent', 'Too many edits'"
+            />
+            <FeatureCard
               title="Document Goals"
-              description="Auto-synthesized objectives guide edits. Lock goals to prevent drift or edit them manually."
-            />
-            <FeatureCard
-              title="Vibe Edit"
-              description="Document-level analysis for clarity, structure, and flow. Apply intelligent suggestions directly."
-            />
-            <FeatureCard
-              title="Syntax Highlighting"
-              description="Auto-detects LaTeX and Markdown. Colors commands, math, headings, and formatting."
-            />
-            <FeatureCard
-              title="Multiple Profiles"
-              description="Create profiles for different contexts: journals, grants, blogs. Switch instantly."
-            />
-            <FeatureCard
-              title="Document Preferences"
-              description="Fine-tune verbosity, formality, and hedging per document with sliders."
-            />
-            <FeatureCard
-              title="Interactive Diffs"
-              description="Inline or side-by-side views. Toggle individual changes before accepting."
-            />
-            <FeatureCard
-              title="Version History"
-              description="Undo/redo with full history. Compare any two versions."
-            />
-            <FeatureCard
-              title="Adaptive Learning"
-              description="Learns from rejections, not accepts. Consolidates rules. Conservative word learning."
+              description="Auto-synthesized objectives guide edits. Lock to prevent drift."
             />
           </div>
         </section>
 
-        {/* Technology */}
+        {/* Deep Dive Links */}
         <section className="mb-12">
-          <h2 className="text-2xl font-semibold text-[var(--foreground)] mb-4">Technology Stack</h2>
-          <div className="grid md:grid-cols-3 gap-4">
-            <TechCard title="Frontend" items={['Next.js 15', 'React 19', 'TypeScript', 'Tailwind CSS', 'CodeMirror 6']} />
-            <TechCard title="AI Providers" items={['Anthropic (Claude)', 'OpenAI (GPT-4)', 'Ollama (Local)']} />
-            <TechCard title="Features" items={['Server Components', 'API Routes', 'File-based Storage', 'Real-time Auto-save']} />
+          <h2 className="text-2xl font-semibold text-[var(--foreground)] mb-4">Deep Dive</h2>
+          <div className="grid md:grid-cols-2 gap-4">
+            <a
+              href="https://github.com/p-koo/styler/blob/main/WHITEPAPER.md"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-4 border border-[var(--border)] rounded-lg hover:bg-[var(--muted)] transition-colors"
+            >
+              <h3 className="font-semibold text-[var(--foreground)] mb-1">Whitepaper</h3>
+              <p className="text-sm text-[var(--muted-foreground)]">Comprehensive system documentation</p>
+            </a>
+            <a
+              href="https://github.com/p-koo/styler/blob/main/BLOG.md"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-4 border border-[var(--border)] rounded-lg hover:bg-[var(--muted)] transition-colors"
+            >
+              <h3 className="font-semibold text-[var(--foreground)] mb-1">Technical Blog</h3>
+              <p className="text-sm text-[var(--muted-foreground)]">Developer-focused architecture walkthrough</p>
+            </a>
           </div>
         </section>
 
@@ -296,7 +185,7 @@ export default function AboutPage() {
         <section className="mb-12">
           <h2 className="text-2xl font-semibold text-[var(--foreground)] mb-4">Open Source</h2>
           <p className="text-[var(--muted-foreground)] mb-4">
-            Styler is open source under the MIT license. Contributions, bug reports, and feature requests are welcome.
+            Styler is open source under the MIT license.
           </p>
           <a
             href="https://github.com/p-koo/styler"
@@ -312,40 +201,27 @@ export default function AboutPage() {
         </section>
 
         {/* Contact */}
-        <section className="mb-12">
+        <section>
           <h2 className="text-2xl font-semibold text-[var(--foreground)] mb-4">Contact</h2>
-          <div className="bg-[var(--muted)] rounded-lg p-6">
-            <div className="flex items-start gap-4">
-              <div className="w-12 h-12 bg-[var(--primary)] rounded-full flex items-center justify-center text-[var(--primary-foreground)] font-semibold text-lg">
-                PK
-              </div>
-              <div>
-                <h3 className="font-semibold text-[var(--foreground)]">Peter Koo</h3>
-                <p className="text-[var(--muted-foreground)] mb-2">Creator & Maintainer</p>
-                <a
-                  href="mailto:koo@cshl.edu"
-                  className="text-[var(--primary)] hover:underline"
-                >
-                  koo@cshl.edu
-                </a>
-              </div>
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-[var(--primary)] rounded-full flex items-center justify-center text-[var(--primary-foreground)] font-semibold text-lg">
+              PK
+            </div>
+            <div>
+              <h3 className="font-semibold text-[var(--foreground)]">Peter Koo</h3>
+              <a href="mailto:koo@cshl.edu" className="text-[var(--primary)] hover:underline">
+                koo@cshl.edu
+              </a>
             </div>
           </div>
-        </section>
-
-        {/* Acknowledgments */}
-        <section>
-          <h2 className="text-2xl font-semibold text-[var(--foreground)] mb-4">Acknowledgments</h2>
-          <p className="text-[var(--muted-foreground)]">
-            Built with Claude Code by Anthropic.
-          </p>
         </section>
       </main>
 
       {/* Footer */}
       <footer className="border-t border-[var(--border)] py-8 mt-16">
         <div className="max-w-4xl mx-auto px-4 text-center text-sm text-[var(--muted-foreground)]">
-          <div className="flex items-center justify-center gap-4">
+          <p>Built with Claude Code by Anthropic</p>
+          <div className="mt-2 flex items-center justify-center gap-4">
             <Link href="/" className="hover:text-[var(--foreground)] transition-colors">
               Home
             </Link>
@@ -367,12 +243,7 @@ export default function AboutPage() {
   );
 }
 
-function AgentDetail({ name, icon, summary, details }: {
-  name: string;
-  icon: string;
-  summary: string;
-  details: string[];
-}) {
+function AgentCard({ name, role, details }: { name: string; role: string; details: string }) {
   const [isOpen, setIsOpen] = useState(false);
 
   return (
@@ -381,10 +252,9 @@ function AgentDetail({ name, icon, summary, details }: {
         onClick={() => setIsOpen(!isOpen)}
         className="w-full px-4 py-3 flex items-center gap-3 hover:bg-[var(--muted)] transition-colors text-left"
       >
-        <span className="text-2xl">{icon}</span>
         <div className="flex-1">
           <span className="font-medium text-[var(--foreground)]">{name}</span>
-          <span className="text-[var(--muted-foreground)]"> — {summary}</span>
+          <span className="text-[var(--muted-foreground)]"> — {role}</span>
         </div>
         <svg
           className={`w-5 h-5 text-[var(--muted-foreground)] transition-transform ${isOpen ? 'rotate-180' : ''}`}
@@ -396,31 +266,33 @@ function AgentDetail({ name, icon, summary, details }: {
         </svg>
       </button>
       {isOpen && (
-        <div className="px-4 py-3 bg-[var(--muted)]/50 border-t border-[var(--border)]">
-          <ul className="space-y-2">
-            {details.map((detail, i) => (
-              <li key={i} className="flex items-start gap-2 text-sm text-[var(--muted-foreground)]">
-                <span className="text-[var(--primary)] mt-1">•</span>
-                {detail}
-              </li>
-            ))}
-          </ul>
+        <div className="px-4 py-3 bg-[var(--muted)]/50 border-t border-[var(--border)] text-sm text-[var(--muted-foreground)]">
+          {details}
         </div>
       )}
     </div>
   );
 }
 
-function FlowStep({ number, title, description }: { number: number; title: string; description: string }) {
+function PreferenceLayer({ name, scope, description }: { name: string; scope: string; description: string }) {
   return (
-    <div className="flex gap-4">
-      <div className="flex-shrink-0 w-8 h-8 flex items-center justify-center bg-[var(--primary)] text-[var(--primary-foreground)] rounded-full font-semibold text-sm">
-        {number}
+    <div className="flex items-center gap-4 p-4 border border-[var(--border)] rounded-lg">
+      <div className="flex-shrink-0 px-3 py-1 bg-[var(--primary)]/10 text-[var(--primary)] rounded text-sm font-medium">
+        {scope}
       </div>
       <div>
-        <h3 className="font-medium text-[var(--foreground)]">{title}</h3>
+        <h3 className="font-medium text-[var(--foreground)]">{name}</h3>
         <p className="text-sm text-[var(--muted-foreground)]">{description}</p>
       </div>
+    </div>
+  );
+}
+
+function LearningCard({ title, description }: { title: string; description: string }) {
+  return (
+    <div className="p-4 border border-[var(--border)] rounded-lg">
+      <h3 className="font-semibold text-[var(--foreground)] mb-1">{title}</h3>
+      <p className="text-sm text-[var(--muted-foreground)]">{description}</p>
     </div>
   );
 }
@@ -430,19 +302,6 @@ function FeatureCard({ title, description }: { title: string; description: strin
     <div className="p-4 border border-[var(--border)] rounded-lg">
       <h3 className="font-semibold text-[var(--foreground)] mb-1">{title}</h3>
       <p className="text-sm text-[var(--muted-foreground)]">{description}</p>
-    </div>
-  );
-}
-
-function TechCard({ title, items }: { title: string; items: string[] }) {
-  return (
-    <div className="p-4 border border-[var(--border)] rounded-lg">
-      <h3 className="font-semibold text-[var(--foreground)] mb-2">{title}</h3>
-      <ul className="space-y-1">
-        {items.map((item, i) => (
-          <li key={i} className="text-sm text-[var(--muted-foreground)]">{item}</li>
-        ))}
-      </ul>
     </div>
   );
 }

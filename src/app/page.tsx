@@ -9,7 +9,7 @@ export default function Home() {
 
       <main className="max-w-4xl mx-auto px-4 py-16">
         {/* Hero Section */}
-        <div className="text-center mb-16">
+        <div className="text-center mb-12">
           <div className="flex items-center justify-center gap-4 mb-6">
             <Image
               src="/logo.png"
@@ -20,8 +20,11 @@ export default function Home() {
             />
             <h1 className="text-5xl font-bold text-[var(--foreground)]">Styler</h1>
           </div>
-          <p className="text-xl text-[var(--muted-foreground)] max-w-2xl mx-auto">
-            A document editor that uses ADAPT (Adaptive Document Alignment via Prompt Transformations) to align LLM-guided edits with your personal writing style.
+          <p className="text-2xl text-[var(--foreground)] font-medium mb-4">
+            AI editing that sounds like you
+          </p>
+          <p className="text-lg text-[var(--muted-foreground)] max-w-2xl mx-auto">
+            Most AI writing tools make everyone sound the same. Styler learns your personal style and preserves your voice while improving clarity and flow.
           </p>
         </div>
 
@@ -33,89 +36,162 @@ export default function Home() {
           >
             Start Editing
           </Link>
+          <p className="mt-3 text-sm text-[var(--muted-foreground)]">
+            No account required • All data stays local
+          </p>
         </div>
 
-        {/* Features Grid */}
-        <div className="grid md:grid-cols-2 gap-8 mb-16">
-          <FeatureCard
-            icon="🎯"
-            title="Style Learning"
-            description="Upload your ChatGPT conversation history or existing documents. ADAPT analyzes your writing patterns to understand your unique voice."
-          />
-          <FeatureCard
-            icon="🤖"
-            title="Multi-Agent Architecture"
-            description="A coordinated system of AI agents works together: Prompt Agent builds context, LLM generates edits, and Critique Agent ensures quality."
-          />
-          <FeatureCard
-            icon="✨"
-            title="Vibe Edit"
-            description="Document-level analysis that understands the big picture. Get intelligent suggestions for clarity, flow, and structure—then apply them directly."
-          />
-          <FeatureCard
-            icon="📊"
-            title="Audience Profiles"
-            description="Create different profiles for various contexts—academic journals, grant proposals, technical blogs—each with tailored style settings."
-          />
-          <FeatureCard
-            icon="🔄"
-            title="Continuous Adaptation"
-            description="The system learns from your accept/reject decisions, continuously improving its suggestions to match your preferences."
-          />
-          <FeatureCard
-            icon="✨"
-            title="Syntax Highlighting"
-            description="Auto-detects LaTeX and Markdown syntax. Colors commands, math, headings, and code blocks for easier editing."
-          />
-        </div>
-
-        {/* Use Cases */}
+        {/* Problem/Solution */}
         <section className="mb-16">
-          <h2 className="text-2xl font-semibold text-[var(--foreground)] mb-6 text-center">
-            Designed For
-          </h2>
-          <div className="grid md:grid-cols-3 gap-6">
-            <UseCaseCard
-              title="Researchers"
-              items={['Research papers', 'Thesis & dissertations', 'Literature reviews']}
-            />
-            <UseCaseCard
-              title="Academics"
-              items={['Grant proposals', 'Course materials', 'Conference submissions']}
-            />
-            <UseCaseCard
-              title="Professionals"
-              items={['Technical documentation', 'Reports & proposals', 'Business communications']}
-            />
+          <div className="grid md:grid-cols-2 gap-6">
+            <div className="p-6 border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/30 rounded-lg">
+              <h3 className="text-lg font-semibold text-red-700 dark:text-red-400 mb-3">Generic AI Tools</h3>
+              <ul className="space-y-2 text-red-600 dark:text-red-400/80">
+                <li className="flex items-start gap-2">
+                  <span className="mt-1">✗</span>
+                  <span>One-size-fits-all edits</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="mt-1">✗</span>
+                  <span>Strips your unique voice</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="mt-1">✗</span>
+                  <span>No memory between sessions</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="mt-1">✗</span>
+                  <span>Same output for everyone</span>
+                </li>
+              </ul>
+            </div>
+            <div className="p-6 border border-green-200 dark:border-green-900 bg-green-50 dark:bg-green-950/30 rounded-lg">
+              <h3 className="text-lg font-semibold text-green-700 dark:text-green-400 mb-3">Styler</h3>
+              <ul className="space-y-2 text-green-600 dark:text-green-400/80">
+                <li className="flex items-start gap-2">
+                  <span className="mt-1">✓</span>
+                  <span>Learns your preferences</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="mt-1">✓</span>
+                  <span>Preserves your voice</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="mt-1">✓</span>
+                  <span>Continuous learning</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="mt-1">✓</span>
+                  <span>Adapts to you</span>
+                </li>
+              </ul>
+            </div>
           </div>
         </section>
 
-        {/* How It Works */}
+        {/* How It Works - Simplified */}
         <section className="mb-16">
           <h2 className="text-2xl font-semibold text-[var(--foreground)] mb-6 text-center">
             How It Works
           </h2>
-          <div className="space-y-4">
-            <StepCard
-              number={1}
-              title="Select Text"
-              description="Click cells to select them. Use Shift+click for ranges or Cmd/Ctrl+click for multiple selections."
+          <div className="relative">
+            {/* Connection line */}
+            <div className="hidden md:block absolute left-1/2 top-8 bottom-8 w-0.5 bg-[var(--border)] -translate-x-1/2" />
+
+            <div className="space-y-6">
+              <StepCard
+                number={1}
+                title="Select & Instruct"
+                description="Select paragraphs and optionally add an instruction like 'make concise' or 'add hedging'"
+              />
+              <StepCard
+                number={2}
+                title="AI Generates Edit"
+                description="Multiple agents analyze intent, build a style-aware prompt, and generate an aligned edit"
+              />
+              <StepCard
+                number={3}
+                title="Review & Toggle"
+                description="See word-level diffs, toggle individual changes, refine with feedback if needed"
+              />
+              <StepCard
+                number={4}
+                title="System Learns"
+                description="Your accept/reject decisions teach the system your preferences over time"
+              />
+            </div>
+          </div>
+        </section>
+
+        {/* Key Features */}
+        <section className="mb-16">
+          <h2 className="text-2xl font-semibold text-[var(--foreground)] mb-6 text-center">
+            Key Features
+          </h2>
+          <div className="grid md:grid-cols-3 gap-4">
+            <FeatureCard
+              title="Style Controls"
+              description="Adjust verbosity, formality, and hedging with simple sliders"
             />
-            <StepCard
-              number={2}
-              title="Request Edit"
-              description="Add an optional instruction like 'make more concise' or 'add appropriate hedging' and click Get Edit Suggestion."
+            <FeatureCard
+              title="Document Goals"
+              description="Auto-synthesized objectives guide every edit"
             />
-            <StepCard
-              number={3}
-              title="Review & Refine"
-              description="View the suggested changes with inline or side-by-side diff. Toggle individual changes before applying."
+            <FeatureCard
+              title="Audience Profiles"
+              description="Switch contexts: journal, grant, blog, business"
             />
-            <StepCard
-              number={4}
-              title="Learn & Improve"
-              description="Your accept/reject decisions help the system learn your preferences over time."
+            <FeatureCard
+              title="Interactive Diffs"
+              description="Toggle individual changes before accepting"
             />
+            <FeatureCard
+              title="Iterative Refinement"
+              description="Add feedback, click Refine, get better edits"
+            />
+            <FeatureCard
+              title="LaTeX & Markdown"
+              description="Syntax-aware editing with highlighting"
+            />
+          </div>
+        </section>
+
+        {/* Use Cases */}
+        <section className="mb-16">
+          <h2 className="text-2xl font-semibold text-[var(--foreground)] mb-6 text-center">
+            Built For
+          </h2>
+          <div className="grid md:grid-cols-3 gap-6">
+            <UseCaseCard
+              title="Researchers"
+              items={['Papers & manuscripts', 'Thesis writing', 'Literature reviews']}
+            />
+            <UseCaseCard
+              title="Academics"
+              items={['Grant proposals', 'Course materials', 'Conference papers']}
+            />
+            <UseCaseCard
+              title="Professionals"
+              items={['Technical docs', 'Reports', 'Business writing']}
+            />
+          </div>
+        </section>
+
+        {/* ADAPT Architecture Teaser */}
+        <section className="mb-16">
+          <div className="p-6 border border-[var(--border)] rounded-lg bg-[var(--muted)]/30">
+            <h2 className="text-xl font-semibold text-[var(--foreground)] mb-3">
+              Powered by ADAPT
+            </h2>
+            <p className="text-[var(--muted-foreground)] mb-4">
+              <strong>Adaptive Document Alignment via Prompt Transformations</strong> — a multi-agent system where specialized AI agents collaborate to understand context, analyze intent, generate style-aligned edits, and ensure quality through iterative critique-and-refine loops.
+            </p>
+            <Link
+              href="/about"
+              className="text-[var(--primary)] hover:underline font-medium"
+            >
+              Learn how it works →
+            </Link>
           </div>
         </section>
 
@@ -127,9 +203,6 @@ export default function Home() {
           >
             Try Styler Now
           </Link>
-          <p className="mt-4 text-sm text-[var(--muted-foreground)]">
-            No account required. Your data stays on your machine.
-          </p>
         </div>
       </main>
 
@@ -156,24 +229,23 @@ export default function Home() {
   );
 }
 
-function FeatureCard({ icon, title, description }: { icon: string; title: string; description: string }) {
+function FeatureCard({ title, description }: { title: string; description: string }) {
   return (
-    <div className="p-6 border border-[var(--border)] rounded-lg bg-[var(--background)]">
-      <div className="text-3xl mb-3">{icon}</div>
-      <h3 className="text-lg font-semibold text-[var(--foreground)] mb-2">{title}</h3>
-      <p className="text-[var(--muted-foreground)]">{description}</p>
+    <div className="p-4 border border-[var(--border)] rounded-lg bg-[var(--background)]">
+      <h3 className="font-semibold text-[var(--foreground)] mb-1">{title}</h3>
+      <p className="text-sm text-[var(--muted-foreground)]">{description}</p>
     </div>
   );
 }
 
 function UseCaseCard({ title, items }: { title: string; items: string[] }) {
   return (
-    <div className="p-6 border border-[var(--border)] rounded-lg bg-[var(--background)]">
-      <h3 className="text-lg font-semibold text-[var(--foreground)] mb-3">{title}</h3>
-      <ul className="space-y-2">
+    <div className="p-5 border border-[var(--border)] rounded-lg bg-[var(--background)]">
+      <h3 className="font-semibold text-[var(--foreground)] mb-3">{title}</h3>
+      <ul className="space-y-1.5">
         {items.map((item, i) => (
-          <li key={i} className="text-[var(--muted-foreground)] flex items-center gap-2">
-            <span className="w-1.5 h-1.5 bg-[var(--primary)] rounded-full" />
+          <li key={i} className="text-sm text-[var(--muted-foreground)] flex items-center gap-2">
+            <span className="w-1.5 h-1.5 bg-[var(--primary)] rounded-full flex-shrink-0" />
             {item}
           </li>
         ))}
@@ -184,12 +256,12 @@ function UseCaseCard({ title, items }: { title: string; items: string[] }) {
 
 function StepCard({ number, title, description }: { number: number; title: string; description: string }) {
   return (
-    <div className="flex gap-4 p-4 border border-[var(--border)] rounded-lg bg-[var(--background)]">
-      <div className="flex-shrink-0 w-10 h-10 flex items-center justify-center bg-[var(--primary)] text-[var(--primary-foreground)] rounded-full font-semibold">
+    <div className="flex gap-4 p-4 border border-[var(--border)] rounded-lg bg-[var(--background)] relative">
+      <div className="flex-shrink-0 w-10 h-10 flex items-center justify-center bg-[var(--primary)] text-[var(--primary-foreground)] rounded-full font-semibold z-10">
         {number}
       </div>
       <div>
-        <h3 className="font-semibold text-[var(--foreground)] mb-1">{title}</h3>
+        <h3 className="font-semibold text-[var(--foreground)] mb-0.5">{title}</h3>
         <p className="text-sm text-[var(--muted-foreground)]">{description}</p>
       </div>
     </div>

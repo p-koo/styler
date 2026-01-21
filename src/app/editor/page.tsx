@@ -6,6 +6,7 @@ import dynamic from 'next/dynamic';
 import DiffView, { SideBySideDiff, type FeedbackType, type RejectFeedback, type RefinementContext } from '@/components/DiffView';
 import CritiqueBadge from '@/components/CritiqueBadge';
 import EditInsights from '@/components/EditInsights';
+import AgentVisualization from '@/components/AgentVisualization';
 import DocumentProfilePanel from '@/components/DocumentProfilePanel';
 import FeedbackPanel, { type FeedbackPanelState, DEFAULT_FEEDBACK_STATE } from '@/components/FeedbackPanel';
 import SyntaxHighlighter, { type HighlightMode } from '@/components/SyntaxHighlighter';
@@ -3150,7 +3151,10 @@ export default function EditorPage() {
                           )}
                         </div>
 
-                        {/* Agent Visualization Toggle */}
+                        {/* Agent Pipeline Visualization during loading */}
+                        {isLoading && (
+                          <AgentVisualization isActive={isLoading} />
+                        )}
                         {/* Cell Actions */}
                         {(() => {
                           // Check if selected cell can be split (has newlines)

@@ -1,0 +1,63 @@
+{
+  "version": "1.0",
+  "type": "styler-profile",
+  "profile": {
+    "id": "nih-grant",
+    "name": "NIH Grant",
+    "description": "NIH grant proposals: significance, innovation, approach, investigator qualifications",
+    "source": "manual",
+    "overrides": {
+      "verbosity": "detailed",
+      "formalityLevel": 4,
+      "hedgingStyle": "balanced",
+      "activeVoicePreference": 0.7,
+      "formatBans": ["emoji", "exclamation"],
+      "avoidWords": [
+        "breakthrough", "paradigm shift", "revolutionary",
+        "very", "really", "extremely", "highly"
+      ],
+      "learnedRules": [
+        {
+          "rule": "Start sections with clear, direct statements of significance",
+          "confidence": 0.9,
+          "source": "explicit"
+        },
+        {
+          "rule": "Use \"will\" for proposed work, \"have\" for preliminary data",
+          "confidence": 0.85,
+          "source": "explicit"
+        },
+        {
+          "rule": "Connect each aim to the overall goal and public health relevance",
+          "confidence": 0.9,
+          "source": "explicit"
+        },
+        {
+          "rule": "Anticipate and address potential pitfalls with alternatives",
+          "confidence": 0.85,
+          "source": "explicit"
+        }
+      ]
+    },
+    "jargonLevel": "heavy",
+    "disciplineTerms": [],
+    "emphasisPoints": [
+      "Significance and public health impact",
+      "Innovation beyond current approaches",
+      "Rigor and reproducibility",
+      "Investigator qualifications and environment",
+      "Feasibility with preliminary data"
+    ],
+    "framingGuidance": [
+      "Frame significance in terms of disease burden and unmet need",
+      "Clearly articulate the gap in knowledge being addressed",
+      "Emphasize innovation without overclaiming",
+      "Demonstrate feasibility through preliminary data",
+      "Show awareness of potential problems and alternative approaches"
+    ],
+    "lengthGuidance": {
+      "target": "comprehensive"
+    }
+  },
+  "exportedAt": "2026-01-21T00:00:00.000Z"
+}

@@ -1,0 +1,65 @@
+{
+  "version": "1.0",
+  "type": "styler-profile",
+  "profile": {
+    "id": "ml-paper",
+    "name": "ML Paper",
+    "description": "Machine learning research: technical precision, clear methodology, reproducibility focus",
+    "source": "manual",
+    "overrides": {
+      "verbosity": "moderate",
+      "formalityLevel": 4,
+      "hedgingStyle": "balanced",
+      "activeVoicePreference": 0.6,
+      "formatBans": ["emoji"],
+      "avoidWords": [
+        "obviously", "clearly", "trivially", "simply",
+        "state-of-the-art", "novel", "first"
+      ],
+      "learnedRules": [
+        {
+          "rule": "Be precise about what was compared and how",
+          "confidence": 0.9,
+          "source": "explicit"
+        },
+        {
+          "rule": "Include confidence intervals or statistical significance",
+          "confidence": 0.85,
+          "source": "explicit"
+        },
+        {
+          "rule": "Avoid overclaiming - use \"outperforms\" only with proper baselines",
+          "confidence": 0.9,
+          "source": "explicit"
+        },
+        {
+          "rule": "Describe ablations and what they reveal about the method",
+          "confidence": 0.8,
+          "source": "explicit"
+        }
+      ]
+    },
+    "jargonLevel": "heavy",
+    "disciplineTerms": [
+      "ablation", "baseline", "benchmark", "hyperparameter",
+      "architecture", "downstream", "upstream", "fine-tuning",
+      "pre-training", "embedding", "latent", "representation"
+    ],
+    "emphasisPoints": [
+      "Technical contribution and novelty",
+      "Empirical validation and ablations",
+      "Reproducibility and implementation details",
+      "Comparison to strong baselines"
+    ],
+    "framingGuidance": [
+      "Clearly state the problem and why existing solutions fall short",
+      "Separate method description from experimental validation",
+      "Be specific about datasets, metrics, and evaluation protocols",
+      "Acknowledge limitations and failure cases"
+    ],
+    "lengthGuidance": {
+      "target": "standard"
+    }
+  },
+  "exportedAt": "2026-01-21T00:00:00.000Z"
+}

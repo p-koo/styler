@@ -1,0 +1,62 @@
+{
+  "version": "1.0",
+  "type": "styler-profile",
+  "profile": {
+    "id": "nature-science",
+    "name": "Nature / Science",
+    "description": "High-impact journal style: concise, accessible, significant claims with strong evidence",
+    "source": "manual",
+    "overrides": {
+      "verbosity": "moderate",
+      "formalityLevel": 4,
+      "hedgingStyle": "balanced",
+      "activeVoicePreference": 0.8,
+      "formatBans": ["emoji", "exclamation"],
+      "avoidWords": [
+        "very", "really", "basically", "actually", "obviously",
+        "clearly", "of course", "interestingly", "importantly",
+        "it is worth noting", "it should be noted"
+      ],
+      "learnedRules": [
+        {
+          "rule": "Lead with the key finding or insight, not background",
+          "confidence": 0.9,
+          "source": "explicit"
+        },
+        {
+          "rule": "Use precise, quantitative language over vague qualifiers",
+          "confidence": 0.9,
+          "source": "explicit"
+        },
+        {
+          "rule": "Connect findings to broader scientific significance",
+          "confidence": 0.85,
+          "source": "explicit"
+        },
+        {
+          "rule": "Keep sentences under 25 words when possible",
+          "confidence": 0.8,
+          "source": "explicit"
+        }
+      ]
+    },
+    "jargonLevel": "moderate",
+    "disciplineTerms": [],
+    "emphasisPoints": [
+      "Novelty and significance of findings",
+      "Broader impact and implications",
+      "Rigorous methodology",
+      "Clear mechanistic insights"
+    ],
+    "framingGuidance": [
+      "Frame results in terms of what they reveal, not what was done",
+      "Connect to outstanding questions in the field",
+      "Emphasize what is new and why it matters",
+      "Be direct about limitations but confident about conclusions"
+    ],
+    "lengthGuidance": {
+      "target": "concise"
+    }
+  },
+  "exportedAt": "2026-01-21T00:00:00.000Z"
+}

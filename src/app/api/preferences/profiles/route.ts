@@ -6,8 +6,9 @@ import type { AudienceProfile } from '@/types';
 interface CreateProfileRequest {
   name: string;
   description: string;
-  sampleText: string; // The pasted preference/style guide
+  sampleText?: string; // The pasted preference/style guide
   model?: string;
+  importedProfile?: AudienceProfile; // Pre-built profile from JSON import
 }
 
 const PROFILE_OPTIMIZATION_PROMPT = `You are an expert at analyzing writing style preferences and creating audience profile configurations.
@@ -46,7 +47,33 @@ Respond with ONLY a valid JSON object (no markdown, no explanation) in this exac
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json() as CreateProfileRequest;
-    const { name, description, sampleText, model } = body;
+    const { name, description, sampleText, model, importedProfile } = body;
+
+    // Handle importing a pre-built profile
+    if (importedProfile) {
+      const profile: AudienceProfile = {
+        ...importedProfile,
+        // Ensure required fields
+        id: importedProfile.id || `profile-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        name: importedProfile.name || name || 'Imported Profile',
+        description: importedProfile.description || description || '',
+        source: 'manual',
+        jargonLevel: importedProfile.jargonLevel || 'moderate',
+        disciplineTerms: importedProfile.disciplineTerms || [],
+        emphasisPoints: importedProfile.emphasisPoints || [],
+        framingGuidance: importedProfile.framingGuidance || [],
+        overrides: importedProfile.overrides || {},
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      await upsertAudienceProfile(profile);
+
+      return NextResponse.json({
+        profile,
+        imported: true,
+      });
+    }
 
     if (!name?.trim()) {
       return NextResponse.json(

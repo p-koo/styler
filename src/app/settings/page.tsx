@@ -95,7 +95,7 @@ export default function SettingsPage() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [editingProfile, setEditingProfile] = useState<AudienceProfile | null>(null);
   const [showCreateProfile, setShowCreateProfile] = useState(false);
-  const [profileCreationMode, setProfileCreationMode] = useState<'select' | 'chatgpt' | 'document' | 'manual'>('select');
+  const [profileCreationMode, setProfileCreationMode] = useState<'select' | 'chatgpt' | 'document' | 'manual' | 'upload'>('select');
   const [newProfileName, setNewProfileName] = useState('');
   const [newProfileDescription, setNewProfileDescription] = useState('');
   const [newProfileSampleText, setNewProfileSampleText] = useState('');
@@ -337,6 +337,48 @@ export default function SettingsPage() {
           );
           setMessage({ type: 'success', text: 'Profile created from document analysis!' });
         }
+      } else if (profileCreationMode === 'upload') {
+        // Upload mode - import from JSON file
+        if (!uploadedFile) {
+          setMessage({ type: 'error', text: 'Please select a profile JSON file' });
+          setCreatingProfile(false);
+          return;
+        }
+
+        const text = await uploadedFile.text();
+        const data = JSON.parse(text);
+
+        // Validate it's a profile export
+        if (data.type !== 'styler-profile' || !data.profile) {
+          setMessage({ type: 'error', text: 'Invalid profile file. Expected a Styler profile export.' });
+          setCreatingProfile(false);
+          return;
+        }
+
+        // Generate new ID to avoid conflicts
+        const importedProfile = {
+          ...data.profile,
+          id: `${data.profile.id || 'imported'}-${Date.now()}`,
+          source: 'manual' as const,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+
+        // Save via API
+        const res = await fetch('/api/preferences/profiles', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: importedProfile.name,
+            description: importedProfile.description,
+            importedProfile: importedProfile,
+          }),
+        });
+
+        if (!res.ok) throw new Error('Failed to import profile');
+
+        fetchPreferences();
+        setMessage({ type: 'success', text: `Imported profile: ${importedProfile.name}` });
       } else {
         // Manual mode
         if (!newProfileName.trim()) {
@@ -682,18 +724,23 @@ export default function SettingsPage() {
                   <div className="flex gap-2">
                     <button
                       onClick={() => {
-                        const prompt = generatePromptForProfile(store.baseStyle, profile);
-                        const content = `# ${profile.name}\n\n${profile.description ? profile.description + '\n\n' : ''}## Settings\n- Jargon Level: ${profile.jargonLevel}\n- Length: ${profile.lengthGuidance?.target || 'standard'}\n${profile.emphasisPoints.length > 0 ? `\n## Emphasis Points\n${profile.emphasisPoints.map(p => `- ${p}`).join('\n')}\n` : ''}${profile.framingGuidance.length > 0 ? `\n## Framing Guidance\n${profile.framingGuidance.map(g => `- ${g}`).join('\n')}\n` : ''}${profile.disciplineTerms.length > 0 ? `\n## Domain Terms\n${profile.disciplineTerms.join(', ')}\n` : ''}\n## ChatGPT Custom Instructions\n\n${prompt}`;
-                        const blob = new Blob([content], { type: 'text/plain' });
+                        const exportData = {
+                          version: '1.0',
+                          type: 'styler-profile',
+                          profile: profile,
+                          exportedAt: new Date().toISOString(),
+                        };
+                        const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
                         const url = URL.createObjectURL(blob);
                         const a = document.createElement('a');
                         a.href = url;
-                        a.download = `${profile.name.toLowerCase().replace(/\s+/g, '-')}-profile.txt`;
+                        a.download = `${profile.name.toLowerCase().replace(/\s+/g, '-')}-profile.json`;
                         a.click();
                         URL.revokeObjectURL(url);
+                        setMessage({ type: 'success', text: `Exported ${profile.name} profile` });
                       }}
                       className="px-3 py-1 text-sm border border-[var(--border)] rounded hover:bg-[var(--muted)]"
-                      title="Download as text file"
+                      title="Export as JSON"
                     >
                       ↓
                     </button>
@@ -717,86 +764,6 @@ export default function SettingsPage() {
         )}
       </section>
 
-      {/* Learned Rules Section */}
-      <section className="mb-8 p-6 border border-[var(--border)] rounded-lg">
-        <h2 className="text-lg font-medium mb-4">Learned Rules</h2>
-        <p className="text-[var(--muted-foreground)] text-sm mb-4">
-          Rules inferred from your correction patterns in ChatGPT history.
-        </p>
-
-        {store.baseStyle.learnedRules.length === 0 ? (
-          <p className="text-[var(--muted-foreground)] text-sm">
-            No rules learned yet. Import your ChatGPT history to extract rules from your corrections.
-          </p>
-        ) : (
-          <div className="space-y-2">
-            {store.baseStyle.learnedRules.slice(0, 20).map((rule, i) => (
-              <div
-                key={i}
-                className="p-3 bg-[var(--muted)] rounded-lg text-sm flex items-start justify-between"
-              >
-                <div>
-                  <p>{rule.rule}</p>
-                  <p className="text-xs text-[var(--muted-foreground)] mt-1">
-                    Confidence: {Math.round(rule.confidence * 100)}% | Source: {rule.source}
-                  </p>
-                </div>
-              </div>
-            ))}
-            {store.baseStyle.learnedRules.length > 20 && (
-              <p className="text-sm text-[var(--muted-foreground)]">
-                +{store.baseStyle.learnedRules.length - 20} more rules
-              </p>
-            )}
-          </div>
-        )}
-      </section>
-
-      {/* Export/Import */}
-      <section className="p-6 border border-[var(--border)] rounded-lg">
-        <h2 className="text-lg font-medium mb-4">Export / Import</h2>
-        <div className="flex gap-4">
-          <button
-            onClick={async () => {
-              const res = await fetch('/api/preferences/export');
-              const data = await res.json();
-              const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url;
-              a.download = 'preferences.json';
-              a.click();
-            }}
-            className="px-4 py-2 border border-[var(--border)] rounded-lg hover:bg-[var(--muted)]"
-          >
-            Export Preferences
-          </button>
-          <label className="px-4 py-2 border border-[var(--border)] rounded-lg hover:bg-[var(--muted)] cursor-pointer">
-            Import Preferences
-            <input
-              type="file"
-              accept=".json"
-              className="hidden"
-              onChange={async (e) => {
-                const file = e.target.files?.[0];
-                if (!file) return;
-                try {
-                  const text = await file.text();
-                  await fetch('/api/preferences/import', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: text,
-                  });
-                  fetchPreferences();
-                  setMessage({ type: 'success', text: 'Preferences imported' });
-                } catch (err) {
-                  setMessage({ type: 'error', text: 'Import failed' });
-                }
-              }}
-            />
-          </label>
-        </div>
-      </section>
 
       {/* Profile Edit Modal */}
       {editingProfile && (
@@ -1069,6 +1036,15 @@ export default function SettingsPage() {
                     </div>
                   </button>
                   <button
+                    onClick={() => setProfileCreationMode('upload')}
+                    className="w-full p-4 border border-[var(--border)] rounded-lg hover:bg-[var(--muted)] text-left"
+                  >
+                    <div className="font-medium">Upload Profile (JSON)</div>
+                    <div className="text-sm text-[var(--muted-foreground)]">
+                      Import a profile exported from Styler
+                    </div>
+                  </button>
+                  <button
                     onClick={() => setProfileCreationMode('document')}
                     className="w-full p-4 border border-[var(--border)] rounded-lg hover:bg-[var(--muted)] text-left"
                   >
@@ -1272,6 +1248,35 @@ export default function SettingsPage() {
                   </div>
                 </div>
               )}
+
+              {/* Upload Profile Mode */}
+              {profileCreationMode === 'upload' && (
+                <div className="space-y-4">
+                  <button
+                    onClick={() => setProfileCreationMode('select')}
+                    className="text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] flex items-center gap-1"
+                  >
+                    ← Back to options
+                  </button>
+                  <div>
+                    <label className="block text-sm font-medium mb-2">
+                      Upload Profile JSON
+                    </label>
+                    <p className="text-xs text-[var(--muted-foreground)] mb-2">
+                      Select a profile JSON file exported from Styler.
+                    </p>
+                    <input
+                      type="file"
+                      accept=".json"
+                      onChange={(e) => setUploadedFile(e.target.files?.[0] || null)}
+                      className="w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)]"
+                    />
+                    {uploadedFile && (
+                      <p className="text-sm text-green-600 mt-2">Selected: {uploadedFile.name}</p>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Modal Footer */}
@@ -1289,7 +1294,8 @@ export default function SettingsPage() {
                     creatingProfile ||
                     (profileCreationMode === 'chatgpt' && (!uploadedFile || !newProfileName.trim())) ||
                     (profileCreationMode === 'document' && (!uploadedFile || !newProfileName.trim())) ||
-                    (profileCreationMode === 'manual' && !newProfileName.trim())
+                    (profileCreationMode === 'manual' && !newProfileName.trim()) ||
+                    (profileCreationMode === 'upload' && !uploadedFile)
                   }
                   className="px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-lg hover:opacity-90 disabled:opacity-50"
                 >
@@ -1299,6 +1305,8 @@ export default function SettingsPage() {
                     ? 'Import & Analyze'
                     : profileCreationMode === 'document'
                     ? 'Analyze & Create'
+                    : profileCreationMode === 'upload'
+                    ? 'Import Profile'
                     : newProfileSampleText.trim()
                     ? 'Create & Optimize'
                     : 'Create Profile'}

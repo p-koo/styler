@@ -8,7 +8,9 @@
 import fs from 'fs';
 import path from 'path';
 
-const DATA_DIR = path.join(process.cwd(), 'data');
+// Use USER_DATA_PATH (from Electron) if available, otherwise use cwd
+const BASE_PATH = process.env.USER_DATA_PATH || process.cwd();
+const DATA_DIR = path.join(BASE_PATH, 'data');
 const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
 
 export interface AppConfig {

@@ -63,13 +63,22 @@ function startNextServer() {
     const serverPath = path.join(basePath, ".next", "standalone", "server.js");
 
     // Copy static files to standalone if needed (handled by build process)
+    // Only pass essential env vars - don't leak user's API keys from shell
+    // Set USER_DATA_PATH so the app stores data in the right place
+    const userDataPath = app.getPath("userData");
+    const cleanEnv = {
+      PATH: process.env.PATH,
+      HOME: process.env.HOME,
+      USER: process.env.USER,
+      LANG: process.env.LANG,
+      PORT: PORT.toString(),
+      NODE_ENV: "production",
+      USER_DATA_PATH: userDataPath
+    };
+
     nextServer = spawn(process.execPath.includes("Electron") ? "node" : process.execPath,
       [serverPath], {
-      env: {
-        ...process.env,
-        PORT: PORT.toString(),
-        NODE_ENV: "production"
-      },
+      env: cleanEnv,
       cwd: path.join(basePath, ".next", "standalone"),
       stdio: ["ignore", "pipe", "pipe"]
     });

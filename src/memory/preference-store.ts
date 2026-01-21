@@ -15,7 +15,9 @@ import type {
 } from '@/types';
 import { getDefaultProfiles } from './default-profiles';
 
-const DATA_DIR = path.join(process.cwd(), 'data');
+// Use USER_DATA_PATH (from Electron) if available, otherwise use cwd
+const BASE_PATH = process.env.USER_DATA_PATH || process.cwd();
+const DATA_DIR = path.join(BASE_PATH, 'data');
 const PREFERENCES_FILE = path.join(DATA_DIR, 'preferences.json');
 
 // Current schema version

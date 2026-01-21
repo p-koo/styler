@@ -58,19 +58,7 @@ function generatePromptForProfile(baseStyle: BaseStyle, profile?: AudienceProfil
     parts.push('');
   }
 
-  // Word preferences
-  if (baseStyle.avoidWords.length > 0) {
-    parts.push(`AVOID THESE WORDS: ${baseStyle.avoidWords.join(', ')}`);
-    parts.push('');
-  }
-
-  if (Object.keys(baseStyle.preferredWords).length > 0) {
-    parts.push('WORD SUBSTITUTIONS:');
-    for (const [from, to] of Object.entries(baseStyle.preferredWords)) {
-      parts.push(`- Use "${to}" instead of "${from}"`);
-    }
-    parts.push('');
-  }
+  // Note: Word preferences removed - word choices are contextual
 
   // Profile-specific
   if (profile) {
@@ -620,42 +608,7 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {/* Avoid Words */}
-        <div className="mt-6">
-          <label className="block text-sm font-medium mb-2">Words to Avoid</label>
-          <div className="flex flex-wrap gap-2 mb-2">
-            {store.baseStyle.avoidWords.map((word) => (
-              <span
-                key={word}
-                className="px-2 py-1 bg-[var(--muted)] rounded text-sm flex items-center gap-1"
-              >
-                {word}
-                <button
-                  onClick={() => updateBaseStyle({ avoidWords: store.baseStyle.avoidWords.filter((w) => w !== word) })}
-                  className="text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-                >
-                  ×
-                </button>
-              </span>
-            ))}
-          </div>
-          <input
-            type="text"
-            placeholder="Add word and press Enter"
-            className="px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                const input = e.currentTarget;
-                const word = input.value.trim().toLowerCase();
-                if (word && !store.baseStyle.avoidWords.includes(word)) {
-                  updateBaseStyle({ avoidWords: [...store.baseStyle.avoidWords, word] });
-                  input.value = '';
-                }
-              }
-            }}
-            disabled={saving}
-          />
-        </div>
+        {/* Note: Words to Avoid removed - word choices are contextual */}
       </section>
 
       {/* Audience Profiles Section */}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { DocumentAdjustments, AudienceProfile, LearnedRule, DocumentGoals } from '@/types';
 
 interface DocumentProfilePanelProps {
@@ -20,7 +20,7 @@ const DEFAULT_ADJUSTMENTS: DocumentAdjustments = {
   learnedRules: [],
 };
 
-type TabType = 'style' | 'words' | 'guidance' | 'goals' | 'import';
+type TabType = 'style' | 'guidance' | 'goals' | 'import';
 
 /**
  * Global document profile panel - comprehensive document-specific preferences
@@ -47,9 +47,6 @@ export default function DocumentProfilePanel({
     : baseProfileName;
 
   // For editing
-  const [newAvoidWord, setNewAvoidWord] = useState('');
-  const [newPreferFrom, setNewPreferFrom] = useState('');
-  const [newPreferTo, setNewPreferTo] = useState('');
   const [newGuidance, setNewGuidance] = useState('');
   const [newRule, setNewRule] = useState('');
 
@@ -82,8 +79,14 @@ export default function DocumentProfilePanel({
   const [showImportPreview, setShowImportPreview] = useState(false);
 
   // Load preferences
+  // Track if we're currently analyzing goals (to prevent polling overwrites)
+  // Using a ref for synchronous access - state updates are async and cause race conditions
+  const isAnalyzingRef = useRef(false);
+
   const loadPreferences = useCallback(async () => {
     if (!documentId) return;
+    // Skip polling while analyzing goals to prevent race condition
+    if (isAnalyzingRef.current) return;
 
     try {
       const res = await fetch(`/api/documents/${documentId}/preferences`);
@@ -134,47 +137,6 @@ export default function DocumentProfilePanel({
   const updateSlider = (key: 'verbosityAdjust' | 'formalityAdjust' | 'hedgingAdjust', value: number) => {
     setAdjustments(prev => ({ ...prev, [key]: value }));
     saveAdjustments({ [key]: value });
-  };
-
-  // Add avoid word
-  const addAvoidWord = () => {
-    if (!newAvoidWord.trim()) return;
-    const word = newAvoidWord.trim().toLowerCase();
-    if (adjustments.additionalAvoidWords.includes(word)) {
-      setNewAvoidWord('');
-      return;
-    }
-    const newWords = [...adjustments.additionalAvoidWords, word];
-    setAdjustments(prev => ({ ...prev, additionalAvoidWords: newWords }));
-    setNewAvoidWord('');
-    saveAdjustments({ additionalAvoidWords: newWords });
-  };
-
-  // Remove avoid word
-  const removeAvoidWord = (word: string) => {
-    const newWords = adjustments.additionalAvoidWords.filter(w => w !== word);
-    setAdjustments(prev => ({ ...prev, additionalAvoidWords: newWords }));
-    saveAdjustments({ additionalAvoidWords: newWords });
-  };
-
-  // Add prefer word
-  const addPreferWord = () => {
-    if (!newPreferFrom.trim() || !newPreferTo.trim()) return;
-    const from = newPreferFrom.trim().toLowerCase();
-    const to = newPreferTo.trim();
-    const newPrefer = { ...adjustments.additionalPreferWords, [from]: to };
-    setAdjustments(prev => ({ ...prev, additionalPreferWords: newPrefer }));
-    setNewPreferFrom('');
-    setNewPreferTo('');
-    saveAdjustments({ additionalPreferWords: newPrefer });
-  };
-
-  // Remove prefer word
-  const removePreferWord = (from: string) => {
-    const newPrefer = { ...adjustments.additionalPreferWords };
-    delete newPrefer[from];
-    setAdjustments(prev => ({ ...prev, additionalPreferWords: newPrefer }));
-    saveAdjustments({ additionalPreferWords: newPrefer });
   };
 
   // Add guidance
@@ -318,6 +280,7 @@ export default function DocumentProfilePanel({
   // Analyze document goals
   const handleAnalyzeGoals = async () => {
     setAnalyzingGoals(true);
+    isAnalyzingRef.current = true; // Prevent polling from overwriting (sync)
     try {
       const res = await fetch(`/api/documents/${documentId}/goals`, {
         method: 'POST',
@@ -343,6 +306,9 @@ export default function DocumentProfilePanel({
       }
     } finally {
       setAnalyzingGoals(false);
+      isAnalyzingRef.current = false; // Re-enable polling (sync)
+      // Force reload to get saved goals from server
+      loadPreferences();
     }
   };
 
@@ -560,7 +526,7 @@ export default function DocumentProfilePanel({
 
       {/* Tabs */}
       <div className="flex border-b border-[var(--border)]">
-        {(['style', 'words', 'guidance', 'goals', 'import'] as TabType[]).map(tab => (
+        {(['style', 'guidance', 'goals', 'import'] as TabType[]).map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -666,75 +632,6 @@ export default function DocumentProfilePanel({
                   no cap fr fr, edits will be bussin 💀
                 </p>
               )}
-            </div>
-          </div>
-        )}
-
-        {/* Words Tab */}
-        {activeTab === 'words' && (
-          <div className="space-y-4">
-            {/* Avoid Words */}
-            <div>
-              <h4 className="text-xs font-medium mb-2">Words to Avoid</h4>
-              <div className="flex flex-wrap gap-1 mb-2 min-h-[24px]">
-                {adjustments.additionalAvoidWords.map((word, i) => (
-                  <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-50 text-red-600 text-[10px] rounded group">
-                    {word}
-                    <button onClick={() => removeAvoidWord(word)} className="opacity-50 hover:opacity-100">×</button>
-                  </span>
-                ))}
-                {adjustments.additionalAvoidWords.length === 0 && (
-                  <span className="text-[10px] text-[var(--muted-foreground)]">None</span>
-                )}
-              </div>
-              <div className="flex gap-1">
-                <input
-                  type="text"
-                  value={newAvoidWord}
-                  onChange={e => setNewAvoidWord(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && addAvoidWord()}
-                  placeholder="Add word..."
-                  className="flex-1 px-2 py-1 text-xs border border-[var(--border)] rounded bg-[var(--background)]"
-                />
-                <button onClick={addAvoidWord} className="px-2 py-1 text-xs bg-red-50 text-red-600 rounded hover:bg-red-100">Add</button>
-              </div>
-            </div>
-
-            {/* Prefer Words */}
-            <div>
-              <h4 className="text-xs font-medium mb-2">Word Preferences</h4>
-              <div className="space-y-1 mb-2 min-h-[24px]">
-                {Object.entries(adjustments.additionalPreferWords).map(([from, to], i) => (
-                  <div key={i} className="flex items-center gap-2 text-[10px] group">
-                    <span className="px-2 py-0.5 bg-red-50 text-red-600 rounded line-through">{from}</span>
-                    <span>→</span>
-                    <span className="px-2 py-0.5 bg-green-50 text-green-600 rounded">{to}</span>
-                    <button onClick={() => removePreferWord(from)} className="opacity-0 group-hover:opacity-50 hover:!opacity-100">×</button>
-                  </div>
-                ))}
-                {Object.keys(adjustments.additionalPreferWords).length === 0 && (
-                  <span className="text-[10px] text-[var(--muted-foreground)]">None</span>
-                )}
-              </div>
-              <div className="flex gap-1 items-center">
-                <input
-                  type="text"
-                  value={newPreferFrom}
-                  onChange={e => setNewPreferFrom(e.target.value)}
-                  placeholder="Avoid..."
-                  className="flex-1 px-2 py-1 text-xs border border-[var(--border)] rounded bg-[var(--background)]"
-                />
-                <span className="text-xs">→</span>
-                <input
-                  type="text"
-                  value={newPreferTo}
-                  onChange={e => setNewPreferTo(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && addPreferWord()}
-                  placeholder="Use..."
-                  className="flex-1 px-2 py-1 text-xs border border-[var(--border)] rounded bg-[var(--background)]"
-                />
-                <button onClick={addPreferWord} className="px-2 py-1 text-xs bg-green-50 text-green-600 rounded hover:bg-green-100">Add</button>
-              </div>
             </div>
           </div>
         )}

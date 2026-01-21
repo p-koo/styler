@@ -234,7 +234,7 @@ export interface StyleExtractionResult {
 // ========================================
 
 // Critique issue types
-export type CritiqueIssueType = 'verbosity' | 'formality' | 'word_choice' | 'structure' | 'tone' | 'hedging' | 'brainrot';
+export type CritiqueIssueType = 'verbosity' | 'formality' | 'word_choice' | 'structure' | 'tone' | 'hedging' | 'brainrot' | 'user_feedback' | 'rejected_change';
 export type CritiqueIssueSeverity = 'minor' | 'moderate' | 'major';
 export type EditDecisionType = 'accepted' | 'rejected' | 'partial';
 

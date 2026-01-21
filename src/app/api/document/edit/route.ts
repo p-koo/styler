@@ -7,7 +7,7 @@ import type { DocumentStructure } from '../analyze/route';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { cells, cellIndex, instruction, profileId, documentStructure, model, documentId, syntaxMode } = body as {
+    const { cells, cellIndex, instruction, profileId, documentStructure, model, documentId, syntaxMode, refinementContext } = body as {
       cells: string[];
       cellIndex: number;
       instruction?: string;
@@ -16,6 +16,12 @@ export async function POST(request: NextRequest) {
       model?: string;
       documentId?: string;
       syntaxMode?: SyntaxMode;
+      refinementContext?: {
+        previousEdit: string;      // The previous suggested edit
+        userCurrentText: string;   // Text after user toggled changes
+        userFeedback: string;      // User's typed feedback
+        rejectedChanges: string[]; // Descriptions of changes user reverted
+      };
     };
 
     if (!cells || typeof cellIndex !== 'number') {
@@ -61,6 +67,7 @@ export async function POST(request: NextRequest) {
       model,
       baseStyle: store.baseStyle,
       audienceProfile: activeProfile,
+      refinementContext,
     });
 
     // Check if document profile had any active adjustments

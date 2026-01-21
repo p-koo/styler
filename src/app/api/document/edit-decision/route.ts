@@ -183,27 +183,10 @@ export async function POST(request: NextRequest) {
           const suggested = patterns.suggestedAdjustments;
           const adj = documentPrefs.adjustments;
 
-          if (suggested.verbosityAdjust !== undefined && suggested.verbosityAdjust !== null) {
-            adj.verbosityAdjust = clamp(
-              adj.verbosityAdjust + suggested.verbosityAdjust * 0.5,
-              -2,
-              2
-            );
-          }
-          if (suggested.formalityAdjust !== undefined && suggested.formalityAdjust !== null) {
-            adj.formalityAdjust = clamp(
-              adj.formalityAdjust + suggested.formalityAdjust * 0.5,
-              -2,
-              2
-            );
-          }
-          if (suggested.hedgingAdjust !== undefined && suggested.hedgingAdjust !== null) {
-            adj.hedgingAdjust = clamp(
-              adj.hedgingAdjust + suggested.hedgingAdjust * 0.5,
-              -2,
-              2
-            );
-          }
+          // NOTE: We no longer auto-adjust the style sliders (verbosity, formality, hedging).
+          // These are user-controlled only to prevent style drift.
+          // The sliders should only change through explicit user action on the UI sliders.
+
           if (suggested.additionalAvoidWords) {
             adj.additionalAvoidWords = [
               ...new Set([...adj.additionalAvoidWords, ...suggested.additionalAvoidWords]),

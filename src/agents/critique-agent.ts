@@ -99,9 +99,8 @@ export async function critiqueEdit(params: {
         `Hedging adjustment: ${adj.hedgingAdjust > 0 ? 'more cautious' : 'more confident'} (${adj.hedgingAdjust})`
       );
     }
-    if (adj.additionalAvoidWords.length > 0) {
-      adjustments.push(`Additional words to avoid: ${adj.additionalAvoidWords.join(', ')}`);
-    }
+    // NOTE: We no longer include additionalAvoidWords in critique context.
+    // Word choices are contextual and shouldn't affect alignment scoring.
     if (adj.learnedRules.length > 0) {
       adjustments.push('Learned rules from this document:');
       adj.learnedRules.forEach((r) => adjustments.push(`- ${r.rule}`));
@@ -141,9 +140,9 @@ Analyze the suggested edit and provide a JSON response with this exact structure
 Focus on:
 1. Does the edit match the verbosity preference?
 2. Is the formality level appropriate?
-3. Are avoided words being introduced or preferred words being removed?
-4. Does the hedging style match the preference?
-5. Does the structure match style patterns?
+3. Does the hedging style match the preference?
+4. Is the tone consistent with the style preferences?
+5. Does the structure preserve the original meaning and flow?
 
 Return ONLY the JSON object, no other text.`;
 
@@ -680,25 +679,9 @@ export function learnFromExplicitFeedback(params: {
     const adjustment = FEEDBACK_ADJUSTMENTS[category];
     if (!adjustment) continue;
 
-    // Apply slider adjustments
-    if (adjustment.verbosity) {
-      newAdjustments.verbosityAdjust = clamp(
-        newAdjustments.verbosityAdjust + adjustment.verbosity,
-        -2, 2
-      );
-    }
-    if (adjustment.formality) {
-      newAdjustments.formalityAdjust = clamp(
-        newAdjustments.formalityAdjust + adjustment.formality,
-        -2, 2
-      );
-    }
-    if (adjustment.hedging) {
-      newAdjustments.hedgingAdjust = clamp(
-        newAdjustments.hedgingAdjust + adjustment.hedging,
-        -2, 2
-      );
-    }
+    // NOTE: We no longer auto-adjust the style sliders (verbosity, formality, hedging).
+    // These are user-controlled only to prevent style drift.
+    // The sliders should only change through explicit user action on the UI sliders.
 
     // Add rule with HIGH confidence since it's explicit feedback
     if (adjustment.rule) {
@@ -788,104 +771,23 @@ export function computeWordDiff(suggested: string, userVersion: string): {
 }
 
 /**
- * Learn from word-level diffs in REJECTIONS only.
+ * Learn from word-level diffs - DISABLED.
  *
- * IMPORTANT: We track patterns but are VERY conservative about converting
- * them to word preferences. Word choices are contextual - just because
- * a user rejected "utilize" once doesn't mean they always want "use".
+ * Word choices are contextual. "That" isn't universally bad - sometimes you need it.
+ * The system should focus on style patterns (verbosity, formality, hedging) and
+ * document goals/intent, not memorizing specific words.
  *
- * We only convert to avoid/prefer words when:
- * - The pattern has been seen 5+ times (strong signal)
- * - Confidence is very high (0.85+)
+ * This function is kept for backwards compatibility but no longer modifies preferences.
  */
 export function learnFromDiff(params: {
   suggestedEdit: string;
   userVersion: string;
   documentPreferences: DocumentPreferences;
 }): DocumentPreferences {
-  const { suggestedEdit, userVersion, documentPreferences } = params;
-
-  const diff = computeWordDiff(suggestedEdit, userVersion);
-  const patterns = [...(documentPreferences.adjustments.diffPatterns || [])];
-
-  // Update removal patterns (words user removed from suggestions)
-  for (const word of diff.removals) {
-    // Skip very common words that are likely contextual
-    if (word.length < 4) continue;
-
-    const existing = patterns.find(p => p.type === 'removal' && p.pattern === word);
-    if (existing) {
-      existing.count++;
-      // Slower confidence growth - need more evidence
-      existing.confidence = Math.min(0.95, 0.3 + existing.count * 0.1);
-    } else {
-      patterns.push({
-        type: 'removal',
-        pattern: word,
-        count: 1,
-        confidence: 0.3, // Start low
-      });
-    }
-  }
-
-  // Track substitutions but DON'T automatically convert to preferWords
-  // Substitutions are almost always contextual
-  for (const sub of diff.substitutions) {
-    if (sub.from.length < 4 || sub.to.length < 4) continue;
-
-    const existing = patterns.find(
-      p => p.type === 'substitution' && p.pattern === sub.from
-    );
-    if (existing) {
-      existing.count++;
-      existing.confidence = Math.min(0.95, 0.3 + existing.count * 0.1);
-      // Only update replacement if it's consistent
-      if (existing.replacement === sub.to) {
-        existing.confidence += 0.05; // Bonus for consistency
-      }
-    } else {
-      patterns.push({
-        type: 'substitution',
-        pattern: sub.from,
-        replacement: sub.to,
-        count: 1,
-        confidence: 0.3,
-      });
-    }
-  }
-
-  // Only keep patterns that have been seen multiple times
-  const filteredPatterns = patterns
-    .filter(p => p.count >= 2)
-    .slice(-20); // Keep fewer patterns
-
-  // VERY conservative conversion to avoid/prefer words
-  // Only for patterns seen 5+ times with high confidence
-  const WORD_THRESHOLD_COUNT = 5;
-  const WORD_THRESHOLD_CONFIDENCE = 0.85;
-
-  const newAvoidWords = [...documentPreferences.adjustments.additionalAvoidWords];
-  for (const p of filteredPatterns) {
-    if (p.type === 'removal' &&
-        p.count >= WORD_THRESHOLD_COUNT &&
-        p.confidence >= WORD_THRESHOLD_CONFIDENCE &&
-        !newAvoidWords.includes(p.pattern)) {
-      newAvoidWords.push(p.pattern);
-      console.log(`Added "${p.pattern}" to avoidWords after ${p.count} rejections`);
-    }
-  }
-
-  // Don't convert substitutions to preferWords - too context-dependent
-  // Just keep them as tracked patterns for analysis
-
+  // Word-level learning disabled - too contextual and can steer in wrong direction.
+  // Instead, the system focuses on style patterns and intent.
   return {
-    ...documentPreferences,
-    adjustments: {
-      ...documentPreferences.adjustments,
-      diffPatterns: filteredPatterns,
-      // Keep prefer words as-is, don't add from diff
-      additionalAvoidWords: newAvoidWords.slice(0, 30), // Lower cap
-    },
+    ...params.documentPreferences,
     updatedAt: new Date().toISOString(),
   };
 }

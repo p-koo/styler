@@ -31,12 +31,21 @@ const REJECT_FEEDBACK_OPTIONS: { value: RejectFeedback; label: string; descripti
   { value: 'other', label: 'Other', description: 'Something else' },
 ];
 
+// Context passed to refinement callback
+export interface RefinementContext {
+  currentText: string;        // Text with user's accepted/rejected change selections applied
+  feedback: string;           // User's typed feedback
+  rejectedChanges: string[];  // Descriptions of changes user reverted to original
+}
+
 interface DiffViewProps {
   original: string;
   edited: string;
   onAccept?: (finalText: string) => void;
   onReject?: (feedback?: RejectFeedback[]) => void;
   onFeedback?: (feedback: FeedbackType) => void;
+  onRefine?: (context: RefinementContext) => void;
+  isRefining?: boolean;
   showFeedback?: boolean;
 }
 
@@ -156,6 +165,8 @@ export default function DiffView({
   onAccept,
   onReject,
   onFeedback,
+  onRefine,
+  isRefining = false,
   showFeedback = true,
 }: DiffViewProps) {
   const diff = useMemo(() => computeDiff(original, edited), [original, edited]);
@@ -167,7 +178,7 @@ export default function DiffView({
   const wordDiff = editedWords - originalWords;
   const wordDiffPercent = originalWords > 0 ? Math.round((wordDiff / originalWords) * 100) : 0;
 
-  const changeGroups = useMemo(() => grouped.filter(isChangeGroup) as ChangeGroup[], [grouped]);
+  const changeGroups = useMemo(() => groupChanges(diff).filter(isChangeGroup) as ChangeGroup[], [diff]);
 
   // Track which changes are accepted (true = accept new, false = keep original)
   const [acceptedChanges, setAcceptedChanges] = useState<Record<number, boolean>>(() => {
@@ -178,6 +189,15 @@ export default function DiffView({
     return initial;
   });
 
+  // Reset accepted changes when edited text changes (new refinement result)
+  useEffect(() => {
+    const initial: Record<number, boolean> = {};
+    changeGroups.forEach((item) => {
+      initial[item.id] = true;
+    });
+    setAcceptedChanges(initial);
+  }, [edited]);
+
   // Manual edit mode
   const [isManualEdit, setIsManualEdit] = useState(false);
   const [manualText, setManualText] = useState(edited);
@@ -185,6 +205,10 @@ export default function DiffView({
   // Reject feedback modal state
   const [showRejectFeedback, setShowRejectFeedback] = useState(false);
   const [selectedFeedback, setSelectedFeedback] = useState<Set<RejectFeedback>>(new Set());
+
+  // Refinement feedback state
+  const [showRefineFeedback, setShowRefineFeedback] = useState(false);
+  const [refineFeedback, setRefineFeedback] = useState('');
 
   const changeCount = changeGroups.length;
   const acceptedCount = Object.values(acceptedChanges).filter(Boolean).length;
@@ -266,6 +290,44 @@ export default function DiffView({
     setShowRejectFeedback(true);
   };
 
+  // Build descriptions of changes user rejected (reverted to original)
+  const buildRejectedChangesDescriptions = useCallback(() => {
+    const rejected: string[] = [];
+    for (const group of changeGroups) {
+      if (!acceptedChanges[group.id]) {
+        // User rejected this change (kept original)
+        const oldText = group.removed?.text?.trim() || '';
+        const newText = group.added?.text?.trim() || '';
+        if (oldText && newText) {
+          rejected.push(`Kept "${oldText}" instead of "${newText}"`);
+        } else if (newText) {
+          rejected.push(`Rejected addition: "${newText}"`);
+        } else if (oldText) {
+          rejected.push(`Rejected removal of: "${oldText}"`);
+        }
+      }
+    }
+    return rejected;
+  }, [changeGroups, acceptedChanges]);
+
+  // Handle refine request
+  const handleRefine = useCallback(() => {
+    if (!onRefine) return;
+
+    const currentText = buildFinalText();
+    const rejectedChanges = buildRejectedChangesDescriptions();
+
+    onRefine({
+      currentText,
+      feedback: refineFeedback,
+      rejectedChanges,
+    });
+
+    // Reset feedback input for next refinement
+    setRefineFeedback('');
+    setShowRefineFeedback(false);
+  }, [onRefine, buildFinalText, buildRejectedChangesDescriptions, refineFeedback]);
+
   if (changeCount === 0) {
     return (
       <div className="p-4 bg-[var(--muted)] rounded-lg">
@@ -344,7 +406,7 @@ export default function DiffView({
           </div>
 
           {/* Diff content */}
-          <div className="p-4 leading-relaxed select-none">
+          <div className="p-4 leading-relaxed select-none whitespace-pre-wrap">
             {grouped.map((item, idx) => {
               if (!isChangeGroup(item)) {
                 return <span key={`seg-${idx}`}>{item.text}</span>;
@@ -405,57 +467,6 @@ export default function DiffView({
         </>
       )}
 
-      {/* Feedback buttons */}
-      {showFeedback && onFeedback && (
-        <div className="px-4 py-2 border-t border-[var(--border)] bg-yellow-50 dark:bg-yellow-900/20">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs text-yellow-700 dark:text-yellow-300 font-medium">Quick feedback:</span>
-            <button
-              type="button"
-              onClick={() => onFeedback('too_long')}
-              className="text-xs px-2 py-1 rounded border border-yellow-300 bg-yellow-100 hover:bg-yellow-200 text-yellow-800"
-            >
-              Too long
-            </button>
-            <button
-              type="button"
-              onClick={() => onFeedback('too_short')}
-              className="text-xs px-2 py-1 rounded border border-yellow-300 bg-yellow-100 hover:bg-yellow-200 text-yellow-800"
-            >
-              Too short
-            </button>
-            <button
-              type="button"
-              onClick={() => onFeedback('too_formal')}
-              className="text-xs px-2 py-1 rounded border border-yellow-300 bg-yellow-100 hover:bg-yellow-200 text-yellow-800"
-            >
-              Too formal
-            </button>
-            <button
-              type="button"
-              onClick={() => onFeedback('too_casual')}
-              className="text-xs px-2 py-1 rounded border border-yellow-300 bg-yellow-100 hover:bg-yellow-200 text-yellow-800"
-            >
-              Too casual
-            </button>
-            <button
-              type="button"
-              onClick={() => onFeedback('too_hedged')}
-              className="text-xs px-2 py-1 rounded border border-yellow-300 bg-yellow-100 hover:bg-yellow-200 text-yellow-800"
-            >
-              Too hedged
-            </button>
-            <button
-              type="button"
-              onClick={() => onFeedback('too_bold')}
-              className="text-xs px-2 py-1 rounded border border-yellow-300 bg-yellow-100 hover:bg-yellow-200 text-yellow-800"
-            >
-              Too bold
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Reject Feedback Modal */}
       {showRejectFeedback && (
         <div className="px-4 py-3 border-t border-[var(--border)] bg-red-50 dark:bg-red-900/20">
@@ -503,23 +514,96 @@ export default function DiffView({
         </div>
       )}
 
+      {/* Refinement Feedback Section */}
+      {onRefine && !showRejectFeedback && !isManualEdit && (
+        <div className="px-4 py-3 border-t border-[var(--border)] bg-yellow-50 dark:bg-yellow-900/20">
+          {/* Quick feedback chips */}
+          <div className="flex items-center gap-2 flex-wrap mb-2">
+            <span className="text-xs text-yellow-700 dark:text-yellow-300 font-medium">Quick feedback:</span>
+            {['Imprecise', 'Not logical', 'Too clunky', 'Lost intent', 'Too vague', 'Poor flow', 'Too many edits'].map((chip) => (
+              <button
+                key={chip}
+                type="button"
+                onClick={() => setRefineFeedback((prev) => prev ? `${prev}, ${chip.toLowerCase()}` : chip.toLowerCase())}
+                className="text-xs px-2 py-1 rounded border border-blue-400 bg-blue-100 hover:bg-blue-200 text-blue-800 dark:bg-blue-800 dark:text-blue-100 dark:border-blue-500 dark:hover:bg-blue-700"
+              >
+                {chip}
+              </button>
+            ))}
+          </div>
+
+          {/* Collapsible detailed feedback */}
+          <details open={showRefineFeedback || refineFeedback.length > 0}>
+            <summary
+              className="cursor-pointer text-xs text-yellow-700 dark:text-yellow-300 hover:text-yellow-900 dark:hover:text-yellow-100"
+              onClick={(e) => {
+                e.preventDefault();
+                setShowRefineFeedback(!showRefineFeedback);
+              }}
+            >
+              {showRefineFeedback || refineFeedback ? 'Refine with feedback' : 'Add detailed feedback...'}
+            </summary>
+            {(showRefineFeedback || refineFeedback.length > 0) && (
+              <div className="mt-2">
+                <textarea
+                  value={refineFeedback}
+                  onChange={(e) => setRefineFeedback(e.target.value)}
+                  placeholder="Describe what you'd like changed... e.g., 'Make it more technical but keep the original structure'"
+                  className="w-full p-2 text-sm border border-yellow-400 dark:border-yellow-600 rounded bg-white dark:bg-gray-800 resize-y min-h-[60px]"
+                  rows={2}
+                />
+              </div>
+            )}
+          </details>
+
+          {/* Show rejected changes summary if any */}
+          {Object.values(acceptedChanges).some((v) => !v) && (
+            <div className="mt-2 text-xs text-yellow-700 dark:text-yellow-400">
+              {Object.values(acceptedChanges).filter((v) => !v).length} change(s) toggled off - these will be preserved in refinement
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Actions */}
-      {(onAccept || onReject) && !showRejectFeedback && (
+      {(onAccept || onReject || onRefine) && !showRejectFeedback && (
         <div className="flex justify-end gap-2 px-4 py-3 bg-[var(--muted)] border-t border-[var(--border)]">
           {onReject && (
             <button
               type="button"
               onClick={handleQuickReject}
-              className="px-4 py-1.5 text-sm border border-[var(--border)] rounded-lg hover:bg-[var(--background)]"
+              disabled={isRefining}
+              className="px-4 py-1.5 text-sm border border-[var(--border)] rounded-lg hover:bg-[var(--background)] disabled:opacity-50"
             >
               Discard
+            </button>
+          )}
+          {onRefine && !isManualEdit && (
+            <button
+              type="button"
+              onClick={handleRefine}
+              disabled={isRefining}
+              className="px-4 py-1.5 text-sm border border-green-500 text-green-600 rounded-lg hover:bg-green-50 dark:hover:bg-green-900/30 disabled:opacity-50 flex items-center gap-2"
+            >
+              {isRefining ? (
+                <>
+                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                  Refining...
+                </>
+              ) : (
+                'Refine'
+              )}
             </button>
           )}
           {onAccept && (
             <button
               type="button"
               onClick={handleApply}
-              className="px-4 py-1.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700"
+              disabled={isRefining}
+              className="px-4 py-1.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
             >
               {isManualEdit ? 'Apply Edit' : `Apply ${acceptedCount} Changes`}
             </button>
@@ -540,6 +624,8 @@ export function SideBySideDiff({
   onAccept,
   onReject,
   onFeedback,
+  onRefine,
+  isRefining = false,
   showFeedback = true,
 }: DiffViewProps) {
   const [isManualEdit, setIsManualEdit] = useState(false);
@@ -551,6 +637,25 @@ export function SideBySideDiff({
   // Reject feedback state
   const [showRejectFeedback, setShowRejectFeedback] = useState(false);
   const [selectedFeedback, setSelectedFeedback] = useState<Set<RejectFeedback>>(new Set());
+
+  // Refinement feedback state
+  const [showRefineFeedback, setShowRefineFeedback] = useState(false);
+  const [refineFeedback, setRefineFeedback] = useState('');
+
+  // Handle refine request
+  const handleRefine = useCallback(() => {
+    if (!onRefine) return;
+
+    // In side-by-side mode, we don't have toggleable changes, so just use the edited text
+    onRefine({
+      currentText: isManualEdit ? manualText : edited,
+      feedback: refineFeedback,
+      rejectedChanges: [],
+    });
+
+    setRefineFeedback('');
+    setShowRefineFeedback(false);
+  }, [onRefine, edited, isManualEdit, manualText, refineFeedback]);
 
   const toggleFeedback = (feedback: RejectFeedback) => {
     setSelectedFeedback(prev => {
@@ -715,21 +820,6 @@ export function SideBySideDiff({
         </div>
       </div>
 
-      {/* Feedback buttons */}
-      {showFeedback && onFeedback && !showRejectFeedback && (
-        <div className="px-4 py-2 border-t border-[var(--border)] bg-yellow-50 dark:bg-yellow-900/20">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs text-yellow-700 dark:text-yellow-300 font-medium">Quick feedback:</span>
-            <button type="button" onClick={() => onFeedback('too_long')} className="text-xs px-2 py-1 rounded border border-yellow-300 bg-yellow-100 hover:bg-yellow-200 text-yellow-800">Too long</button>
-            <button type="button" onClick={() => onFeedback('too_short')} className="text-xs px-2 py-1 rounded border border-yellow-300 bg-yellow-100 hover:bg-yellow-200 text-yellow-800">Too short</button>
-            <button type="button" onClick={() => onFeedback('too_formal')} className="text-xs px-2 py-1 rounded border border-yellow-300 bg-yellow-100 hover:bg-yellow-200 text-yellow-800">Too formal</button>
-            <button type="button" onClick={() => onFeedback('too_casual')} className="text-xs px-2 py-1 rounded border border-yellow-300 bg-yellow-100 hover:bg-yellow-200 text-yellow-800">Too casual</button>
-            <button type="button" onClick={() => onFeedback('too_hedged')} className="text-xs px-2 py-1 rounded border border-yellow-300 bg-yellow-100 hover:bg-yellow-200 text-yellow-800">Too hedged</button>
-            <button type="button" onClick={() => onFeedback('too_bold')} className="text-xs px-2 py-1 rounded border border-yellow-300 bg-yellow-100 hover:bg-yellow-200 text-yellow-800">Too bold</button>
-          </div>
-        </div>
-      )}
-
       {/* Reject Feedback Modal */}
       {showRejectFeedback && (
         <div className="px-4 py-3 border-t border-[var(--border)] bg-red-50 dark:bg-red-900/20">
@@ -777,23 +867,89 @@ export function SideBySideDiff({
         </div>
       )}
 
+      {/* Refinement Feedback Section */}
+      {onRefine && !showRejectFeedback && (
+        <div className="px-4 py-3 border-t border-[var(--border)] bg-yellow-50 dark:bg-yellow-900/20">
+          {/* Quick feedback chips */}
+          <div className="flex items-center gap-2 flex-wrap mb-2">
+            <span className="text-xs text-yellow-700 dark:text-yellow-300 font-medium">Quick feedback:</span>
+            {['Imprecise', 'Not logical', 'Too clunky', 'Lost intent', 'Too vague', 'Poor flow', 'Too many edits'].map((chip) => (
+              <button
+                key={chip}
+                type="button"
+                onClick={() => setRefineFeedback((prev) => prev ? `${prev}, ${chip.toLowerCase()}` : chip.toLowerCase())}
+                className="text-xs px-2 py-1 rounded border border-blue-400 bg-blue-100 hover:bg-blue-200 text-blue-800 dark:bg-blue-800 dark:text-blue-100 dark:border-blue-500 dark:hover:bg-blue-700"
+              >
+                {chip}
+              </button>
+            ))}
+          </div>
+
+          {/* Collapsible detailed feedback */}
+          <details open={showRefineFeedback || refineFeedback.length > 0}>
+            <summary
+              className="cursor-pointer text-xs text-yellow-700 dark:text-yellow-300 hover:text-yellow-900 dark:hover:text-yellow-100"
+              onClick={(e) => {
+                e.preventDefault();
+                setShowRefineFeedback(!showRefineFeedback);
+              }}
+            >
+              {showRefineFeedback || refineFeedback ? 'Refine with feedback' : 'Add detailed feedback...'}
+            </summary>
+            {(showRefineFeedback || refineFeedback.length > 0) && (
+              <div className="mt-2">
+                <textarea
+                  value={refineFeedback}
+                  onChange={(e) => setRefineFeedback(e.target.value)}
+                  placeholder="Describe what you'd like changed... e.g., 'Make it more technical but keep the original structure'"
+                  className="w-full p-2 text-sm border border-yellow-400 dark:border-yellow-600 rounded bg-white dark:bg-gray-800 resize-y min-h-[60px]"
+                  rows={2}
+                />
+              </div>
+            )}
+          </details>
+        </div>
+      )}
+
       {/* Actions */}
-      {(onAccept || onReject) && !showRejectFeedback && (
+      {(onAccept || onReject || onRefine) && !showRejectFeedback && (
         <div className="flex justify-end gap-2 px-4 py-3 bg-[var(--muted)] border-t border-[var(--border)]">
           {onReject && (
             <button
               type="button"
               onClick={handleQuickReject}
-              className="px-4 py-1.5 text-sm border border-[var(--border)] rounded-lg hover:bg-[var(--background)]"
+              disabled={isRefining}
+              className="px-4 py-1.5 text-sm border border-[var(--border)] rounded-lg hover:bg-[var(--background)] disabled:opacity-50"
             >
               Discard
+            </button>
+          )}
+          {onRefine && (
+            <button
+              type="button"
+              onClick={handleRefine}
+              disabled={isRefining}
+              className="px-4 py-1.5 text-sm border border-green-500 text-green-600 rounded-lg hover:bg-green-50 dark:hover:bg-green-900/30 disabled:opacity-50 flex items-center gap-2"
+            >
+              {isRefining ? (
+                <>
+                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                  Refining...
+                </>
+              ) : (
+                'Refine'
+              )}
             </button>
           )}
           {onAccept && (
             <button
               type="button"
               onClick={() => onAccept(isManualEdit ? manualText : edited)}
-              className="px-4 py-1.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700"
+              disabled={isRefining}
+              className="px-4 py-1.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
             >
               Apply
             </button>

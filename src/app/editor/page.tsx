@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
-import DiffView, { SideBySideDiff, type FeedbackType, type RejectFeedback } from '@/components/DiffView';
+import DiffView, { SideBySideDiff, type FeedbackType, type RejectFeedback, type RefinementContext } from '@/components/DiffView';
 import CritiqueBadge from '@/components/CritiqueBadge';
 import DocumentProfilePanel from '@/components/DocumentProfilePanel';
 import FeedbackPanel, { type FeedbackPanelState, DEFAULT_FEEDBACK_STATE } from '@/components/FeedbackPanel';
@@ -127,6 +127,8 @@ export default function EditorPage() {
   const [selectedCells, setSelectedCells] = useState<Set<number>>(new Set());
   const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isRefining, setIsRefining] = useState(false);
+  const [refiningCellIndex, setRefiningCellIndex] = useState<number | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [profiles, setProfiles] = useState<AudienceProfile[]>([]);
   const [activeProfile, setActiveProfile] = useState<string | null>(null);
@@ -705,11 +707,13 @@ export default function EditorPage() {
         const data = await res.json();
         console.log('[Vibe Edit] Got edited content, length:', data.editedText?.length);
 
-        // Step 3: Temporarily merge cells in document and show diff
-        // Store original cells for reject, show merged cell with edit suggestion
+        // Step 3: Merge cells in document - remove selected cells, replace with single merged cell
+        // Store original cells for splitting on accept and restore on reject
         setDocument((prev) => {
           if (!prev) return null;
           const updated = { ...prev };
+
+          console.log('[Vibe Edit] Before merge:', prev.cells.length, 'cells, merging indices:', selectedIndices);
 
           // Build new cells array: keep cells before selection, add merged cell, keep cells after
           const newCells: Cell[] = [];
@@ -730,19 +734,21 @@ export default function EditorPage() {
                 // Store original cells for splitting on accept and restore on reject
                 originalMergedCells: originalCells,
                 mergedFromIndices: selectedIndices,
+                originalBatchContent: mergedContent, // Also store for diff display
               });
               newIndex++;
             } else if (!selectedIndices.includes(i)) {
-              // Keep non-selected cells
+              // Keep non-selected cells (cells NOT in the selection)
               newCells.push({
                 ...prev.cells[i],
                 index: newIndex,
               });
               newIndex++;
             }
-            // Skip other selected cells (they're merged into the first one)
+            // Skip other selected cells (they're merged into the first one and removed from array)
           }
 
+          console.log('[Vibe Edit] After merge:', newCells.length, 'cells (removed', selectedIndices.length - 1, 'cells)');
           updated.cells = newCells;
           return updated;
         });
@@ -830,8 +836,14 @@ export default function EditorPage() {
       return;
     }
 
-    const isMultiple = selectedIndices.length > 1;
+    // For multi-cell edits, delegate to handleRequestEditDirect which properly merges cells
+    if (selectedIndices.length > 1) {
+      const instruction = editInstruction || 'Improve logical flow and coherence';
+      handleRequestEditDirect(selectedIndices, instruction);
+      return;
+    }
 
+    // Single cell edit
     setIsLoading(true);
 
     // Create abort controller for this request
@@ -839,49 +851,7 @@ export default function EditorPage() {
     const signal = abortControllerRef.current.signal;
 
     try {
-      if (isMultiple) {
-        // Multiple cells: use batch edit endpoint
-        const res = await fetch('/api/document/edit-batch', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            // Send full cell objects with type information
-            cells: document.cells.map((p) => ({ content: p.content, type: p.type || 'cell' })),
-            selectedIndices,
-            instruction: editInstruction || 'Improve logical flow and coherence, rearranging if needed',
-            profileId: activeProfile,
-            documentStructure: document.structure,
-            model: selectedModel || undefined,
-            syntaxMode: editorMode,
-          }),
-          signal,
-        });
-
-        if (!res.ok) throw new Error('Failed to get edit');
-
-        const data = await res.json();
-
-        // Store the batch edit result with combined original content
-        setDocument((prev) => {
-          if (!prev) return null;
-          const updated = { ...prev };
-          updated.cells = [...prev.cells];
-
-          // Combine original paragraphs for comparison
-          const originalCombined = selectedIndices
-            .map((i) => prev.cells[i]?.content || '')
-            .join('\n\n');
-
-          // Mark the first selected paragraph with the combined edit
-          const firstIndex = selectedIndices[0];
-          updated.cells[firstIndex] = {
-            ...updated.cells[firstIndex],
-            edited: data.editedText, // Combined/restructured text
-            originalBatchContent: originalCombined, // Store original for diff
-          };
-          return updated;
-        });
-      } else {
+      {
         // Single paragraph: use existing endpoint
         const cellIndex = selectedIndices[0];
         const res = await fetch('/api/document/edit', {
@@ -933,7 +903,7 @@ export default function EditorPage() {
       setIsLoading(false);
       abortControllerRef.current = null;
     }
-  }, [document, selectedCells, editInstruction, activeProfile, selectedModel]);
+  }, [document, selectedCells, editInstruction, activeProfile, selectedModel, editorMode, handleRequestEditDirect]);
 
   // Stop/cancel the current LLM request
   const handleStopEdit = useCallback(() => {
@@ -998,15 +968,30 @@ export default function EditorPage() {
 
       if (isMergedCell) {
         // MERGED CELL: Split the accepted text back into cells
-        console.log('[Accept Merged] Splitting accepted text back into cells');
+        const originalCellCount = currentCell.originalMergedCells?.length || 1;
+        console.log('[Accept Merged] Splitting accepted text back into cells, original count:', originalCellCount);
 
-        // Split by double newlines
-        const splitTexts = finalText
+        // Try to split by double newlines first
+        let splitTexts = finalText
           .split(/\n\s*\n/)
           .map((p) => p.trim())
           .filter((p) => p.length > 0);
 
-        console.log('[Accept Merged] Split into', splitTexts.length, 'cells');
+        // If we got fewer splits than original cells, try single newlines
+        if (splitTexts.length < originalCellCount && splitTexts.length === 1) {
+          const singleNewlineSplit = finalText
+            .split(/\n/)
+            .map((p) => p.trim())
+            .filter((p) => p.length > 0);
+
+          // Only use single newline split if it gives us a reasonable number of cells
+          if (singleNewlineSplit.length >= originalCellCount) {
+            splitTexts = singleNewlineSplit;
+            console.log('[Accept Merged] Used single newline split:', splitTexts.length);
+          }
+        }
+
+        console.log('[Accept Merged] Split into', splitTexts.length, 'cells (original was', originalCellCount, ')');
 
         // Build new cells array
         const newCells: Cell[] = [];
@@ -1261,6 +1246,108 @@ export default function EditorPage() {
     clearSelection();
     setReviewHighlightedCells(new Set()); // Clear review highlighting
   }, [document, clearSelection, editInstruction, activeProfile, selectedModel]);
+
+  // Handle refine edit request - iterative refinement with user feedback
+  const handleRefineEdit = useCallback(async (index: number, refinementContext: RefinementContext) => {
+    console.log('handleRefineEdit called:', { index, refinementContext });
+
+    if (!document) return;
+
+    const cell = document.cells[index];
+    if (!cell || !cell.edited) {
+      console.error('No edited cell to refine at index:', index);
+      return;
+    }
+
+    setIsRefining(true);
+    setRefiningCellIndex(index);
+
+    // Check if this is a multi-cell (merged) edit
+    const isMergedEdit = cell.originalMergedCells && cell.originalMergedCells.length > 0;
+
+    try {
+      // Get the original text (before any edits)
+      // For merged cells, use originalBatchContent which has the combined original text
+      const originalText = cell.originalBatchContent || cell.content;
+
+      // Build the cells array for context
+      // For the cell being refined, use its original content (not the edited version)
+      const cells = document.cells.map((c, i) => {
+        if (i === index) {
+          // Use the original content for the cell being refined
+          return c.originalBatchContent || c.content;
+        }
+        return c.content;
+      });
+
+      console.log('Refining cell:', { index, isMergedEdit, originalLength: originalText.length });
+
+      const res = await fetch('/api/document/edit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cells,
+          cellIndex: index,
+          instruction: editInstruction || undefined,
+          profileId: activeProfile,
+          documentStructure: document.structure,
+          model: selectedModel || undefined,
+          documentId: document.id,
+          syntaxMode: editorMode,
+          includeCritique: true,
+          refinementContext: {
+            previousEdit: cell.edited,
+            userCurrentText: refinementContext.currentText,
+            userFeedback: refinementContext.feedback,
+            rejectedChanges: refinementContext.rejectedChanges,
+          },
+        }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to refine edit');
+      }
+
+      const data = await res.json();
+      console.log('Refinement response:', data.editedText?.slice(0, 300));
+
+      // Update the cell with the new refined edit
+      // IMPORTANT: Preserve all multi-cell edit metadata (originalMergedCells, mergedFromIndices, etc.)
+      // so that accept/reject can properly handle the merged cells
+      setDocument((prev) => {
+        if (!prev) return null;
+        const updated = { ...prev };
+        updated.cells = [...prev.cells];
+        const currentCell = updated.cells[index];
+
+        // Only update the edit-related fields, preserve everything else including multi-cell metadata
+        updated.cells[index] = {
+          ...currentCell,
+          // Update with new refined edit
+          edited: data.editedText,
+          critique: data.critique,
+          iterations: (currentCell.iterations || 1) + data.iterations,
+          convergenceHistory: [
+            ...(currentCell.convergenceHistory || []),
+            ...(data.convergenceHistory || []),
+          ],
+          // Explicitly preserve multi-cell edit metadata
+          originalMergedCells: currentCell.originalMergedCells,
+          mergedFromIndices: currentCell.mergedFromIndices,
+          originalBatchContent: currentCell.originalBatchContent,
+        };
+        return updated;
+      });
+    } catch (error) {
+      console.error('Refinement failed:', error);
+      const message = error instanceof Error ? error.message : 'Failed to refine edit';
+      alert(`Refinement failed: ${message}`);
+    } finally {
+      setIsRefining(false);
+      setRefiningCellIndex(null);
+    }
+  }, [document, editInstruction, activeProfile, selectedModel, editorMode]);
 
   // Handle quick feedback on edit quality
   const handleFeedback = useCallback(async (feedback: FeedbackType) => {
@@ -1716,7 +1803,7 @@ export default function EditorPage() {
       const firstIndex = selectedIndices[0];
       const firstCell = prev.cells[firstIndex];
 
-      // Combine content with double newlines
+      // Combine content with double newlines to preserve paragraph separation
       const mergedContent = selectedIndices
         .map(i => prev.cells[i]?.content || '')
         .join('\n\n');
@@ -2471,6 +2558,8 @@ export default function EditorPage() {
                               onAccept={(finalText) => handleAcceptEdit(index, finalText)}
                               onReject={(feedback) => handleRejectEdit(index, feedback)}
                               onFeedback={handleFeedback}
+                              onRefine={(ctx) => handleRefineEdit(index, ctx)}
+                              isRefining={isRefining && refiningCellIndex === index}
                             />
                           ) : (
                             <SideBySideDiff
@@ -2479,6 +2568,8 @@ export default function EditorPage() {
                               onAccept={(finalText) => handleAcceptEdit(index, finalText)}
                               onReject={(feedback) => handleRejectEdit(index, feedback)}
                               onFeedback={handleFeedback}
+                              onRefine={(ctx) => handleRefineEdit(index, ctx)}
+                              isRefining={isRefining && refiningCellIndex === index}
                             />
                           )}
                         </div>
@@ -2897,7 +2988,7 @@ export default function EditorPage() {
                     const selectedIndices = Array.from(selectedCells).sort((a, b) => a - b);
                     const isMultiple = selectedIndices.length > 1;
                     const STYLER_TEMPLATES_SINGLE = ['Make concise', 'Fix grammar', 'Improve clarity', 'Add hedging', 'More formal', 'Simplify'];
-                    const STYLER_TEMPLATES_MULTI = ['Make concise', 'Improve clarity', 'Improve logical flow', 'Strengthen transitions', 'Merge ideas', 'Reduce redundancy'];
+                    const STYLER_TEMPLATES_MULTI = ['Make concise', 'Improve clarity', 'Improve logical flow', 'Strengthen transitions', 'Restructure', 'Reduce redundancy'];
                     const templates = isMultiple ? STYLER_TEMPLATES_MULTI : STYLER_TEMPLATES_SINGLE;
 
                     // Build instruction from selected templates + custom instruction

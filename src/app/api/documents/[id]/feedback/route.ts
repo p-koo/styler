@@ -33,47 +33,16 @@ export async function POST(
     const prefs = await getOrCreateDocumentPreferences(documentId, null);
     const adj = { ...prefs.adjustments };
 
-    // Apply adjustment based on feedback
-    switch (feedback) {
-      case 'too_long':
-        // Make it more concise: decrease verbosity
-        adj.verbosityAdjust = Math.max(-2, adj.verbosityAdjust - ADJUSTMENT_AMOUNT);
-        break;
-      case 'too_short':
-        // Make it more detailed: increase verbosity
-        adj.verbosityAdjust = Math.min(2, adj.verbosityAdjust + ADJUSTMENT_AMOUNT);
-        break;
-      case 'too_formal':
-        // Make it more casual: decrease formality
-        adj.formalityAdjust = Math.max(-2, adj.formalityAdjust - ADJUSTMENT_AMOUNT);
-        break;
-      case 'too_casual':
-        // Make it more formal: increase formality
-        adj.formalityAdjust = Math.min(2, adj.formalityAdjust + ADJUSTMENT_AMOUNT);
-        break;
-      case 'too_hedged':
-        // Make it more confident: decrease hedging
-        adj.hedgingAdjust = Math.max(-2, adj.hedgingAdjust - ADJUSTMENT_AMOUNT);
-        break;
-      case 'too_bold':
-        // Make it more cautious: increase hedging
-        adj.hedgingAdjust = Math.min(2, adj.hedgingAdjust + ADJUSTMENT_AMOUNT);
-        break;
-    }
-
-    const updatedPrefs = {
-      ...prefs,
-      adjustments: adj,
-      updatedAt: new Date().toISOString(),
-    };
-
-    await saveDocumentPreferences(updatedPrefs);
+    // NOTE: We no longer auto-adjust the style sliders (verbosity, formality, hedging).
+    // These are user-controlled only to prevent style drift.
+    // The sliders should only change through explicit user action on the UI sliders.
+    // This endpoint is kept for backwards compatibility but no longer modifies sliders.
 
     return NextResponse.json({
       success: true,
       feedback,
       adjustments: adj,
-      message: getFeedbackMessage(feedback, adj),
+      message: `Feedback received: ${feedback}. Style adjustments are now user-controlled only via the sliders.`,
     });
   } catch (error) {
     console.error('Feedback error:', error);

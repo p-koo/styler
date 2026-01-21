@@ -48,10 +48,9 @@ export function buildSystemPrompt(
   // Hedging style
   sections.push(buildHedgingInstruction(style.hedgingStyle));
 
-  // Word preferences
-  if (Object.keys(style.preferredWords).length > 0 || style.avoidWords.length > 0) {
-    sections.push(buildWordPreferenceInstruction(style.preferredWords, style.avoidWords));
-  }
+  // Word preferences - DISABLED
+  // Word choices are contextual. We no longer include word-level preferences in prompts.
+  // The system focuses on style patterns (verbosity, formality, hedging) and intent instead.
 
   // Format constraints
   if (style.formatBans.length > 0 || style.requiredFormats.length > 0) {

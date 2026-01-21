@@ -57,6 +57,14 @@ export interface OrchestrationResult {
 
 export type SyntaxMode = 'plain' | 'markdown' | 'latex' | 'code';
 
+// User refinement context from iterative feedback
+export interface RefinementContext {
+  previousEdit: string;      // The previous suggested edit
+  userCurrentText: string;   // Text after user toggled changes
+  userFeedback: string;      // User's typed feedback
+  rejectedChanges: string[]; // Descriptions of changes user reverted
+}
+
 export interface OrchestrationRequest {
   cells: string[];
   cellIndex: number;
@@ -81,6 +89,7 @@ export interface OrchestrationRequest {
   model?: string;
   baseStyle: BaseStyle;
   audienceProfile?: AudienceProfile;
+  refinementContext?: RefinementContext;
 }
 
 /**
@@ -99,6 +108,7 @@ export async function orchestrateEdit(
     model,
     baseStyle,
     audienceProfile,
+    refinementContext,
   } = request;
 
   const currentCell = cells[cellIndex];
@@ -151,12 +161,54 @@ export async function orchestrateEdit(
     // Continue without intent - it's not critical
   }
 
+  // Build user refinement issues if refinementContext provided
+  const buildRefinementIssues = (ctx: typeof refinementContext): CritiqueIssue[] => {
+    if (!ctx) return [];
+    const issues: CritiqueIssue[] = [];
+
+    // Add user's typed feedback as an issue
+    if (ctx.userFeedback && ctx.userFeedback.trim()) {
+      issues.push({
+        type: 'user_feedback',
+        severity: 'major',
+        description: `User feedback: ${ctx.userFeedback.trim()}`,
+      });
+    }
+
+    // Add rejected changes as issues
+    for (const rejected of ctx.rejectedChanges || []) {
+      issues.push({
+        type: 'rejected_change',
+        severity: 'minor',
+        description: rejected,
+      });
+    }
+
+    return issues;
+  };
+
   // Orchestration loop
   for (let attempt = 1; attempt <= CONFIG.maxRetries; attempt++) {
     iterations = attempt;
 
     // Apply current document preferences to base style
     const adjustedStyle = applyAdjustmentsToStyle(baseStyle, documentPrefs.adjustments);
+
+    // Determine previous attempt and issues
+    // On first attempt with refinementContext, use the user's current text and feedback
+    // On subsequent attempts, use the best edit so far
+    let previousAttempt: string | undefined;
+    let previousIssues: CritiqueIssue[] | undefined;
+
+    if (attempt === 1 && refinementContext) {
+      // User is refining: start from their current text with their feedback
+      previousAttempt = refinementContext.userCurrentText;
+      previousIssues = buildRefinementIssues(refinementContext);
+    } else if (attempt > 1) {
+      // Internal retry loop
+      previousAttempt = bestEdit;
+      previousIssues = bestCritique.issues;
+    }
 
     // Generate edit with current preferences
     const editedText = await generateEdit({
@@ -171,8 +223,9 @@ export async function orchestrateEdit(
       documentAdjustments: documentPrefs.adjustments,
       paragraphIntent,
       documentGoals,
-      previousAttempt: attempt > 1 ? bestEdit : undefined,
-      previousIssues: attempt > 1 ? bestCritique.issues : undefined,
+      previousAttempt,
+      previousIssues,
+      userRefinementFeedback: refinementContext?.userFeedback,
     });
 
     // Critique the edit
@@ -244,7 +297,17 @@ export async function orchestrateEdit(
   }
 
   // Save the updated document preferences
-  await saveDocumentPreferences(documentPrefs);
+  // IMPORTANT: Reload from disk first to preserve any changes made during orchestration
+  // (e.g., goals added by Intent Agent while edit was in progress)
+  const latestPrefs = await getOrCreateDocumentPreferences(documentId, audienceProfile?.id || null);
+
+  // NOTE: We intentionally do NOT overwrite the style sliders (verbosityAdjust, formalityAdjust, hedgingAdjust).
+  // These are user-controlled only - the orchestrator reads them for guidance but never modifies them.
+  // This prevents style drift and ensures user preferences are always respected.
+  // The orchestrator only updates the timestamp to indicate an edit was processed.
+  latestPrefs.updatedAt = new Date().toISOString();
+
+  await saveDocumentPreferences(latestPrefs);
 
   return {
     editedText: bestEdit,
@@ -252,7 +315,7 @@ export async function orchestrateEdit(
     cellIndex,
     critique: bestCritique,
     iterations,
-    documentPreferences: documentPrefs,
+    documentPreferences: latestPrefs,
     convergenceHistory,
   };
 }
@@ -274,6 +337,7 @@ async function generateEdit(params: {
   documentGoals?: DocumentGoals;
   previousAttempt?: string;
   previousIssues?: CritiqueIssue[];
+  userRefinementFeedback?: string;
 }): Promise<string> {
   const {
     cells,
@@ -289,6 +353,7 @@ async function generateEdit(params: {
     documentGoals,
     previousAttempt,
     previousIssues,
+    userRefinementFeedback,
   } = params;
 
   const currentCell = cells[cellIndex];
@@ -318,12 +383,16 @@ async function generateEdit(params: {
   const hasExpansionVerb = /\b(expand|elaborate|develop|flesh\s*out|add\s+more|continue)\b/.test(instructionLower);
 
   // Content type words that WITH a generation verb indicate generation
-  const hasContentType = /\b(text|content|paragraph|section|abstract|introduction|conclusion|perspective|overview)\b/.test(instructionLower);
+  const hasContentType = /\b(text|content|paragraph|section|abstract|introduction|conclusion|discussion|summary|perspective|overview|methods?|results?)\b/.test(instructionLower);
+
+  // Specific phrases that clearly indicate ADD/generation (preserve existing + add new)
+  // Match: "add a discussion", "draft a discussion", "write a conclusion", "create an abstract", etc.
+  const hasAddPhrase = /\b(add|draft|write|create|compose)\s+(a|an|the)?\s*(new\s+)?(appropriate\s+)?(paragraph|section|abstract|introduction|conclusion|discussion|summary|part)/i.test(instructionLower);
 
   // Specific phrases that clearly indicate generation
   const hasGenerationPhrase =
     /\b(generate|write|create)\s+(a|an|the|new|more)\s+\w+/i.test(instructionLower) ||
-    /\badd\s+(a|an)\s+(new\s+)?(paragraph|section|abstract|introduction)/i.test(instructionLower) ||
+    hasAddPhrase ||
     /\bstructured?\s+correctly/i.test(instructionLower);
 
   // Generation mode: only when there's a clear generation intent
@@ -332,6 +401,17 @@ async function generateEdit(params: {
     (hasGenerationVerb && hasContentType) ||
     hasExpansionVerb ||
     hasGenerationPhrase;
+
+  // ADD mode: user wants to add new content while preserving existing
+  const isAddRequest = hasAddPhrase;
+
+  // Debug logging for ADD mode
+  if (isAddRequest) {
+    console.log('[Orchestrator] ADD MODE DETECTED for instruction:', instruction);
+  }
+  if (isGenerationRequest) {
+    console.log('[Orchestrator] Generation mode:', { hasGenerationVerb, hasContentType, hasExpansionVerb, hasGenerationPhrase, isAddRequest });
+  }
 
   // Build syntax mode instructions
   const getSyntaxInstructions = (mode?: SyntaxMode): string => {
@@ -401,7 +481,18 @@ This is a code document. You MUST:
   contextParts.push('---');
   contextParts.push('');
 
-  if (isGenerationRequest) {
+  if (isAddRequest) {
+    // For ADD mode, we only generate the NEW content - we'll append it ourselves
+    // This avoids asking the LLM to repeat massive documents
+    contextParts.push('The user wants to ADD a new section (discussion, conclusion, etc.) to their document.');
+    contextParts.push('');
+    contextParts.push('IMPORTANT: Generate ONLY the NEW section content.');
+    contextParts.push('- Do NOT include or repeat ANY of the existing document content');
+    contextParts.push('- Just write the new section (e.g., the discussion) that will be appended');
+    contextParts.push('- The new content should reference and build upon the existing document');
+    contextParts.push('- Make sure the new section flows naturally as a continuation');
+    contextParts.push('');
+  } else if (isGenerationRequest) {
     contextParts.push('You are working on a document and need to GENERATE or significantly EXPAND content based on the instruction.');
     contextParts.push('IMPORTANT:');
     contextParts.push('- You are NOT limited to just editing the existing text');
@@ -518,18 +609,55 @@ This is a code document. You MUST:
     contextParts.push('');
   }
 
-  // Add feedback from previous attempt if this is a retry
+  // Add feedback from previous attempt if this is a retry or refinement
   if (previousAttempt && previousIssues && previousIssues.length > 0) {
     contextParts.push('---');
     contextParts.push('');
-    contextParts.push('FEEDBACK ON PREVIOUS ATTEMPT:');
-    contextParts.push('Your previous edit had these issues that need to be addressed:');
-    previousIssues.forEach((issue) => {
-      contextParts.push(`- ${issue.type}: ${issue.description}`);
-    });
-    contextParts.push('');
-    contextParts.push('Please generate an improved version that addresses these issues.');
-    contextParts.push('');
+
+    // Check if this is user refinement feedback (has user_feedback or rejected_change types)
+    const userFeedbackIssues = previousIssues.filter(i => i.type === 'user_feedback');
+    const rejectedChanges = previousIssues.filter(i => i.type === 'rejected_change');
+    const critiqueIssues = previousIssues.filter(i => i.type !== 'user_feedback' && i.type !== 'rejected_change');
+
+    if (userFeedbackIssues.length > 0 || rejectedChanges.length > 0) {
+      // User refinement - prioritize their feedback
+      contextParts.push('=== USER REFINEMENT REQUEST (HIGHEST PRIORITY) ===');
+      contextParts.push('');
+      contextParts.push('The user reviewed your previous edit and has specific feedback:');
+      contextParts.push('');
+
+      if (userFeedbackIssues.length > 0) {
+        contextParts.push('USER\'S FEEDBACK:');
+        userFeedbackIssues.forEach((issue) => {
+          // Remove the "User feedback: " prefix we added
+          const feedback = issue.description.replace(/^User feedback:\s*/i, '');
+          contextParts.push(`"${feedback}"`);
+        });
+        contextParts.push('');
+      }
+
+      if (rejectedChanges.length > 0) {
+        contextParts.push('CHANGES THE USER REJECTED (preserve original wording for these):');
+        rejectedChanges.forEach((issue) => {
+          contextParts.push(`- ${issue.description}`);
+        });
+        contextParts.push('');
+      }
+
+      contextParts.push('Their current working text (with their accepted/rejected selections applied):');
+      contextParts.push(previousAttempt);
+      contextParts.push('');
+      contextParts.push('Generate an IMPROVED version that honors the user\'s feedback while maintaining quality.');
+      contextParts.push('');
+    }
+
+    if (critiqueIssues.length > 0) {
+      contextParts.push('ADDITIONAL CRITIQUE ISSUES:');
+      critiqueIssues.forEach((issue) => {
+        contextParts.push(`- ${issue.type}: ${issue.description}`);
+      });
+      contextParts.push('');
+    }
   }
 
   contextParts.push('---');
@@ -556,7 +684,14 @@ This is a code document. You MUST:
 
   contextParts.push('');
 
-  if (isGenerationRequest) {
+  if (isAddRequest) {
+    contextParts.push('FINAL REMINDER: Generate ONLY the new section content.');
+    contextParts.push('Do NOT repeat any existing document content - just write the new section to be added.');
+    contextParts.push('Do not include explanations or meta-commentary - just return the new content itself.');
+    if (syntaxMode === 'latex') {
+      contextParts.push('REMINDER: Output must be valid LaTeX. Include complete environment tags (\\begin{...} and \\end{...}).');
+    }
+  } else if (isGenerationRequest) {
     contextParts.push('Return the content that fulfills the instruction above. You may generate new paragraphs, expand existing content, or rewrite as needed.');
     contextParts.push('If multiple paragraphs are appropriate, separate them with blank lines.');
     contextParts.push('Do not include explanations or meta-commentary - just return the content itself.');
@@ -577,9 +712,14 @@ This is a code document. You MUST:
   const provider = await createProvider(providerConfig);
 
   // Build user message with reminder of critical rules
-  let userMessage = isGenerationRequest
-    ? 'Please generate the content now based on the instruction.'
-    : 'Please edit the paragraph now. Make targeted, minimal changes that address the instruction while preserving the original voice and structure.';
+  let userMessage: string;
+  if (isAddRequest) {
+    userMessage = 'Please generate ONLY the new section content now. Do not include any existing document content - just write the new section that will be appended to the document.';
+  } else if (isGenerationRequest) {
+    userMessage = 'Please generate the content now based on the instruction.';
+  } else {
+    userMessage = 'Please edit the paragraph now. Make targeted, minimal changes that address the instruction while preserving the original voice and structure.';
+  }
 
   // Add critical rule reminder in user message for extra emphasis
   if (documentAdjustments?.learnedRules && documentAdjustments.learnedRules.length > 0) {
@@ -604,6 +744,14 @@ This is a code document. You MUST:
     ...(isGenerationRequest ? { maxTokens: 4000 } : {}), // Only limit tokens for generation
   });
 
+  // Debug: Log LLM response
+  console.log('[Orchestrator] LLM response length:', result.content?.length);
+  console.log('[Orchestrator] Input length:', currentCell.length);
+  console.log('[Orchestrator] isAddRequest:', isAddRequest);
+  if (isAddRequest) {
+    console.log('[Orchestrator] First 500 chars of response:', result.content?.slice(0, 500));
+  }
+
   // Clean up the response
   let editedText = result.content.trim();
 
@@ -624,6 +772,15 @@ This is a code document. You MUST:
     editedText = editedText.slice(1, -1);
   }
 
+  // For ADD mode: prepend the original content + separator, then the new section
+  // This way we don't ask the LLM to repeat 64KB of text
+  if (isAddRequest && editedText.length > 0) {
+    console.log('[Orchestrator] ADD MODE: Appending new content to original');
+    console.log('[Orchestrator] New section length:', editedText.length);
+    editedText = currentCell + '\n\n' + editedText;
+    console.log('[Orchestrator] Final combined length:', editedText.length);
+  }
+
   return editedText;
 }
 
@@ -640,30 +797,11 @@ function applyCorrectionsFromCritique(
 ): DocumentPreferences {
   const newAdjustments = { ...prefs.adjustments };
 
-  for (const issue of critique.issues) {
-    switch (issue.type) {
-      case 'word_choice':
-        // Extract words to avoid from the issue description
-        const wordMatch = issue.description.match(/["']([^"']+)["']/g);
-        if (wordMatch) {
-          const words = wordMatch.map(w => w.replace(/["']/g, ''));
-          newAdjustments.additionalAvoidWords = [
-            ...new Set([...newAdjustments.additionalAvoidWords, ...words]),
-          ].slice(0, 50);
-        }
-        break;
-
-      // Don't auto-adjust verbosity, formality, or hedging sliders
-      // These should only change via user action or accept/reject learning
-      case 'verbosity':
-      case 'formality':
-      case 'hedging':
-      case 'tone':
-      case 'structure':
-        // No automatic adjustment - respect user's slider settings
-        break;
-    }
-  }
+  // We no longer auto-learn from critique issues.
+  // Word choices are contextual - learning them can steer in wrong direction.
+  // Style adjustments (verbosity, formality, hedging) should only change via
+  // explicit user action on the sliders or through rejection feedback patterns.
+  // The critique is still used for refinement loops, but not for learning word preferences.
 
   return {
     ...prefs,

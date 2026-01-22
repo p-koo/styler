@@ -163,7 +163,14 @@ if (gotTheLock) {
 
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) {
+        // Show dock icon before creating window
+        if (process.platform === "darwin" && app.dock) {
+          app.dock.show();
+        }
         createWindow();
+      } else if (mainWindow) {
+        mainWindow.show();
+        mainWindow.focus();
       }
     });
   });

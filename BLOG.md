@@ -26,39 +26,157 @@ We built **ADAPT** (Adaptive Document Alignment via Prompt Transformations)—a 
 
 The key insight: instead of sending text directly to an LLM with a generic "improve this" prompt, we orchestrate multiple agents that each handle a specific aspect of the editing process.
 
-### The Agent Architecture
+---
+
+## 1. System Architecture
+
+Styler uses a multi-agent orchestration pattern with five specialized agents:
 
 ```
-┌─────────────────────────────────────────────────┐
-│              ORCHESTRATOR                        │
-│   Coordinates the edit → critique → refine loop │
-└─────────────────────────────────────────────────┘
-                      │
-       ┌──────────────┼──────────────┬──────────────┐
-       ▼              ▼              ▼              ▼
-   ┌────────┐    ┌────────┐    ┌──────────┐   ┌──────────┐
-   │ INTENT │    │ PROMPT │    │ CRITIQUE │   │ LEARNING │
-   │ AGENT  │    │ AGENT  │    │  AGENT   │   │  AGENT   │
-   └────────┘    └────────┘    └──────────┘   └──────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                    ORCHESTRATOR AGENT                        │
+│         Coordinates the edit-critique-refine loop            │
+│         File: src/agents/orchestrator-agent.ts               │
+└─────────────────────────────────────────────────────────────┘
+                              │
+    ┌─────────────┬───────────┼───────────┬─────────────┐
+    ▼             ▼           ▼           ▼             ▼
+┌────────┐  ┌──────────┐  ┌────────┐  ┌──────────┐  ┌──────────┐
+│ INTENT │  │  PROMPT  │  │CRITIQUE│  │ LEARNING │  │CONSTRAINT│
+│ AGENT  │  │  AGENT   │  │ AGENT  │  │  AGENT   │  │  AGENT   │
+│        │  │          │  │        │  │          │  │          │
+│analyze │  │ build-   │  │critique│  │ learnFrom│  │ extract- │
+│Intent()│  │ System-  │  │Edit()  │  │Decision()│  │Constraints│
+│        │  │ Prompt() │  │        │  │          │  │          │
+└────────┘  └──────────┘  └────────┘  └──────────┘  └──────────┘
 ```
 
-**Intent Agent**: Before editing anything, this agent analyzes what each paragraph is trying to accomplish. Is it introducing a concept? Providing evidence? Making a transition? This intent is preserved during editing.
+**Each agent has a specific responsibility:**
 
-**Prompt Agent**: Builds context-aware prompts by combining your style preferences, document goals, section context, and learned rules. Different prompts for LaTeX vs. Markdown vs. plain text.
+- **Orchestrator** (`orchestrateEdit()`): Manages the entire edit pipeline—loads preferences, coordinates agents, handles retries, saves results
+- **Intent Agent** (`analyzeIntent()`, `synthesizeGoals()`): Understands paragraph purpose and document objectives before editing
+- **Prompt Agent** (`buildSystemPrompt()`): Compiles user preferences into LLM system prompts
+- **Critique Agent** (`critique-agent.ts`): Fast edit evaluation during the edit loop (user waiting)
+  - `critiqueEdit()` — Scores alignment (0-1)
+  - `applyAdjustmentsToStyle()` — Merges document adjustments
+  - `buildDocumentContextPrompt()` — Builds adjustment context
+- **Learning Agent** (`learning-agent.ts`): Thorough preference learning after decisions (user not waiting)
+  - `learnFromDecision()` — Learns from accept/reject
+  - `analyzeEditPatterns()` — Batch pattern analysis
+  - `learnFromExplicitFeedback()` — Learns from feedback chips
+  - `consolidateLearnedRules()` — Merges similar rules
+- **Constraint Extraction Agent** (`extractConstraints()`): Parses external requirements (journal guidelines, style guides)
 
-**Critique Agent**: Evaluates every generated edit on a 0-1 alignment scale. If the score is below 0.8, it identifies specific issues and triggers re-generation. This creates a quality gate before anything reaches the user. Runs during the edit loop where latency matters.
+---
 
-**Learning Agent**: Analyzes accept/reject decisions to extract style adjustments, patterns, and rules that improve future edits. Runs after user decisions where latency is less critical, allowing for more thorough analysis.
+## 2. Data Structures
 
-**Orchestrator**: Coordinates the whole loop. Calls Intent Agent first, builds the prompt, generates an edit, runs critique, and iterates up to 3 times until quality threshold is met.
+### Core Request/Response Types
 
-## The Three-Layer Preference Stack
+```typescript
+// What gets sent to orchestrateEdit()
+OrchestrationRequest {
+  cells: string[]              // All document paragraphs
+  cellIndex: number            // Which paragraph to edit
+  instruction?: string         // User's editing instruction
+  documentId: string           // For loading document preferences
+  profileId?: string           // Active audience profile
+  syntaxMode?: 'plain' | 'markdown' | 'latex' | 'code'
+  refinementContext?: {        // For iterative refinement
+    previousEdit: string
+    userCurrentText: string
+    userFeedback: string
+    rejectedChanges: string[]
+  }
+}
 
-Style isn't one-dimensional. You might write differently for a journal paper vs. a blog post vs. an email to a collaborator. We model this with three layers:
+// What comes back
+OrchestrationResult {
+  editedText: string
+  originalText: string
+  critique: {
+    alignmentScore: number     // 0-1, how well edit matches preferences
+    issues: CritiqueIssue[]    // What's wrong (verbosity, formality, etc.)
+    suggestions: string[]
+  }
+  iterations: number           // How many retries were needed
+  convergenceHistory: Array<{  // For debugging/transparency
+    attempt: number
+    alignmentScore: number
+    adjustmentsMade: string[]
+  }>
+}
+```
+
+### Storage: Two-Level Hierarchy
+
+| Level | File | Contents |
+|-------|------|----------|
+| **Global** | `data/preferences.json` | `PreferenceStore {baseStyle, audienceProfiles[], activeProfileId}` |
+| **Per-Document** | `documents/{docId}.prefs.json` | `DocumentPreferences {adjustments, editHistory[], documentGoals}` |
+
+---
+
+## 3. The Edit Flow in Detail
+
+Here's exactly what happens when a user clicks "Edit":
+
+```
+POST /api/document/edit
+    │
+    ├─ loadPreferences() → BaseStyle + active AudienceProfile
+    │
+    └─ orchestrateEdit(request)
+        │
+        ├─ 1. Load document preferences (or create defaults)
+        │     └─ getOrCreateDocumentPreferences(documentId)
+        │
+        ├─ 2. Analyze paragraph intent
+        │     └─ intentAgent.analyzeIntent(cells, cellIndex)
+        │        Returns: { purpose, connectionToPrevious, connectionToNext }
+        │
+        └─ 3. EDIT-CRITIQUE-REFINE LOOP (max 3 iterations)
+            │
+            ├─ Build context prompt:
+            │   ├─ User's instruction (PRIMARY - placed first)
+            │   ├─ Style profile (from promptAgent.buildSystemPrompt())
+            │   ├─ Document goals (from Intent Agent)
+            │   ├─ Paragraph intent
+            │   ├─ Surrounding context (±2 paragraphs)
+            │   └─ Previous attempt issues (if retry)
+            │
+            ├─ Call LLM:
+            │   ├─ Temperature: 0.25 (editing) or 0.6 (generation)
+            │   └─ System prompt: compiled from all layers
+            │
+            ├─ Critique the result:
+            │   └─ critiqueAgent.critiqueEdit(original, edited, preferences)
+            │      Returns: alignmentScore (0-1), issues[], suggestions[]
+            │
+            └─ Decision:
+                ├─ Score ≥ 0.8 → Accept, break loop
+                ├─ Score < 0.5 → Strong correction (0.6x strength), retry
+                └─ Score 0.5-0.8 → Normal correction (0.3x), retry if not final
+```
+
+### Key Configuration Values
+
+| Parameter | Value | Purpose |
+|-----------|-------|---------|
+| `alignmentThreshold` | 0.8 | Minimum score to show to user |
+| `strongMisalignmentThreshold` | 0.5 | Triggers stronger corrections |
+| `maxRetries` | 3 | Max refinement attempts |
+| `editTemperature` | 0.25 | Low for consistent edits |
+| `generationTemperature` | 0.6 | Higher for creative content |
+
+---
+
+## 4. The Three-Layer Preference Stack
+
+Style isn't one-dimensional. You might write differently for a journal paper vs. a blog post vs. an email. We model this with three layers:
 
 ### Layer 1: Base Style (Global)
 
-Your fundamental preferences:
 ```typescript
 {
   verbosity: 'moderate',      // terse | moderate | detailed
@@ -74,7 +192,6 @@ Your fundamental preferences:
 
 ### Layer 2: Audience Profiles (Switchable)
 
-Context-specific overlays:
 ```typescript
 {
   name: 'Academic Journal',
@@ -87,7 +204,6 @@ Context-specific overlays:
 
 ### Layer 3: Document Adjustments (Per-Document)
 
-Fine-grained sliders that modify the base + profile:
 ```typescript
 {
   verbosityAdjust: -0.5,    // Slightly more terse for this doc
@@ -98,234 +214,222 @@ Fine-grained sliders that modify the base + profile:
 }
 ```
 
-When generating an edit, all three layers merge. The Prompt Agent computes effective values and builds a prompt that reflects your complete preference stack.
+---
 
-### Example: How a Prompt Gets Built
+## 5. Prompt Construction Example
 
-Let's walk through a concrete example. Say you have these preferences configured:
+The Prompt Agent (`buildSystemPrompt()`) compiles preferences into LLM instructions.
 
-**Base Style:**
+### Input Preferences
+
 ```typescript
-{
+BaseStyle {
   verbosity: 'terse',
-  formalityLevel: 4,  // High formality
+  formalityLevel: 4,
   hedgingStyle: 'cautious',
-  formatBans: ['emoji'],
   learnedRules: [
     { rule: "Prefer active voice", confidence: 0.85 }
   ]
 }
-```
 
-**Active Audience Profile:** "Academic Journal"
-```typescript
-{
+AudienceProfile "Academic Journal" {
   jargonLevel: 'heavy',
   emphasisPoints: ['methodology', 'reproducibility'],
   lengthGuidance: { target: 'comprehensive' }
 }
-```
 
-**Document Adjustments:** (for this specific paper)
-```typescript
-{
-  hedgingAdjust: +1.0,  // Even more cautious than usual
+DocumentAdjustments {
+  hedgingAdjust: +1.0,
   additionalAvoidWords: ['breakthrough', 'novel']
 }
 ```
 
-The Prompt Agent merges these and generates this system prompt:
+### Generated System Prompt
 
 ```
-You are a writing assistant that adapts to the user's personal writing style and preferences.
+You are a writing assistant that adapts to the user's personal style.
 
-VERBOSITY: EXTREME COMPRESSION MODE - YOUR #1 PRIORITY IS CUTTING WORDS
+VERBOSITY: EXTREME COMPRESSION MODE - YOUR #1 PRIORITY
 TARGET: Remove 30-50% of words. If you only cut 10-20%, you have FAILED.
-MANDATORY CUTS - DO ALL OF THESE:
-1. DELETE these words EVERYWHERE: "that", "very", "really", "just"...
-2. DELETE all weak openings: "It is important to note"...
-[...]
+MANDATORY CUTS:
+1. DELETE filler words: "that", "very", "really", "just", "actually"
+2. DELETE weak openings: "It is important to note that..."
+3. CONVERT verbose phrases: "in order to" → "to"
 
-FORMALITY: MAXIMUM FORMAL/ACADEMIC MODE - STRICT REQUIREMENT
-- Use formal, academic language throughout. This is non-negotiable.
-- NEVER use contractions. Replace: don't→do not, isn't→is not...
-- Use third person. Avoid "I", "we", "you". Use "one", "the authors"...
+FORMALITY: MAXIMUM FORMAL/ACADEMIC MODE (Level 4/5)
+- Use formal, academic language throughout
+- NEVER use contractions: don't → do not
+- Use third person: avoid "I", "we", prefer "the authors"
+- Eliminate casual phrases entirely
 
-HEDGING: CAUTIOUS MODE
-- Use appropriate hedging language throughout.
-- ADD qualifiers: "may", "might", "suggests", "appears to"...
-- Acknowledge uncertainty and limitations explicitly.
+HEDGING: CAUTIOUS MODE (boosted +1.0)
+- ADD qualifiers: "may", "might", "suggests", "appears to"
+- Acknowledge uncertainty explicitly
+- Use tentative language for claims
 
-FORMATTING: Never use: emojis.
+FORMATTING: Never use: emojis
 
-SPECIFIC PREFERENCES:
+LEARNED PREFERENCES (confidence ≥ 0.6):
 - Prefer active voice
 
 AUDIENCE CONTEXT: Academic Journal
-Use appropriate technical terminology freely. Assume audience expertise.
-Emphasize: methodology, reproducibility.
-Provide comprehensive detail where appropriate.
+- Use technical terminology freely
+- Assume audience expertise
+- Emphasize: methodology, reproducibility
+- Target: comprehensive detail
+
+AVOID WORDS: breakthrough, novel
 ```
 
-This prompt goes to the LLM along with the text to edit. The combined effect:
-- **Terse verbosity** aggressively cuts filler words
-- **High formality** ensures academic register
-- **Cautious hedging** adds appropriate qualifiers
-- **No emojis** enforced by format rules
-- **Active voice** from learned rules
-- **Heavy jargon** allowed by audience profile
+The user's specific instruction (e.g., "make this more confident") is placed **before** the style instructions so it takes priority.
 
-The result is an edit that sounds like *your* academic writing—compressed but hedged appropriately, formal but using terms your field expects.
+---
 
-## Learning From Feedback
+## 6. The Learning System
 
-The magic happens when you accept or reject edits. We learn from three signals:
+Learning happens through the Learning Agent when users accept, reject, or modify edits.
 
-### 1. Explicit Rejection Feedback
+### Decision Recording Flow
 
-When you reject an edit, we ask why:
-- Too formal / Too casual
-- Changed meaning
-- Over-edited
-- Bad word choice
-
-These map directly to preference adjustments:
-```typescript
-if (feedback === 'too_formal') {
-  documentPrefs.formalityAdjust -= 0.3;
-}
 ```
-
-### 2. Diff Pattern Learning
-
-When you partially accept an edit (toggle some changes off), we analyze the diff:
-```
-Suggested: "The results demonstrate that..."
-You kept:  "The results show that..."
-```
-
-After seeing this pattern 5+ times, we learn: avoid "demonstrate" → "show" substitutions for this user.
-
-### 3. Decision History Analysis
-
-Every decision is recorded:
-```typescript
+POST /api/document/edit-decision
 {
-  original: "We used standard methods.",
-  suggested: "Standard methodologies were employed.",
-  final: "We used standard methods.",  // User rejected
-  decision: 'rejected',
-  feedback: ['too_formal', 'changed_meaning']
+  documentId: "doc-123",
+  decision: "rejected",           // or "accepted" | "partial"
+  originalText: "We utilized...",
+  suggestedEdit: "The methodology employed...",
+  finalText: "We used...",        // What user actually wanted
+  feedback: ["too_formal"]        // Optional explicit category
 }
+    │
+    └─ Triggers: learnFromDecision()
+        │
+        ├─ LLM analyzes: "Why did user reject this edit?"
+        │   Returns: {
+        │     verbosityAdjust: 0,
+        │     formalityAdjust: -0.5,    // User found it too formal
+        │     hedgingAdjust: 0,
+        │     learnedRule: "User prefers simpler vocabulary"
+        │   }
+        │
+        ├─ Apply adjustments with dampening:
+        │   ├─ Rejection: 0.5x dampening
+        │   ├─ Partial: 0.35x dampening
+        │   └─ newValue = current + (delta * dampening)
+        │       Clamped to [-2, +2]
+        │
+        └─ Save to DocumentPreferences
 ```
 
-Periodically, we analyze patterns across decisions to extract higher-level rules.
+### What Gets Updated
 
-## The Edit-Critique-Refine Loop
+| Signal Source | What Updates | Confidence |
+|---------------|--------------|------------|
+| Explicit feedback ("too_formal") | formalityAdjust -= 0.5 | 0.9 |
+| Rejection with LLM analysis | Adjustments + learned rule | 0.8 |
+| Partial accept (toggle off changes) | Diff patterns | 0.6 |
+| Pattern analysis (3+ rejections) | Meta-rules extracted | 0.7-0.85 |
 
-Here's what happens when you click "Edit" on a paragraph:
+### Conservative Learning Constraints
 
-```
-1. Intent Analysis
-   └─ "This paragraph introduces the methodology"
-   └─ "Connects to: problem statement (before), results (after)"
+- **Dampening**: Adjustments are multiplied by 0.35-0.5x to prevent overreaction
+- **Clamping**: All adjustments stay within [-2, +2] range
+- **Confidence threshold**: Only rules with confidence ≥ 0.6 are used in prompts
+- **Rule consolidation**: At 8+ rules, LLM consolidates to prevent dilution
+- **No word memorization**: We learn style patterns, not specific word substitutions (too context-dependent)
 
-2. Prompt Building
-   └─ Merge base style + profile + document adjustments
-   └─ Add intent context and section info
-   └─ Include learned rules and avoid words
+---
 
-3. LLM Generation (temp=0.25 for consistency)
-   └─ "Improve this paragraph: [text]"
+## 7. Special Cases
 
-4. Critique Evaluation
-   └─ Alignment score: 0.72 (below threshold)
-   └─ Issues: ["verbosity: added unnecessary hedge"]
+### Generation vs. Edit Detection
 
-5. Refinement (attempt 2)
-   └─ Add critique feedback to prompt
-   └─ Re-generate with issue awareness
+The orchestrator detects generation requests using regex patterns:
 
-6. Critique Again
-   └─ Alignment score: 0.85 (passes!)
-
-7. Present to User
-   └─ Word-level diff with toggleable changes
-```
-
-The critique step is crucial. Without it, we'd show users edits that don't match their style. The 0.8 threshold ensures quality before presentation.
-
-## Interactive Refinement: The Human in the Loop
-
-Even with critique, sometimes the edit isn't quite right. That's where interactive refinement comes in.
-
-When you see a suggested edit, you can:
-
-1. **Toggle individual changes**: Click any word-level change to revert it
-2. **Add feedback**: "Keep the original word choice for X"
-3. **Click Refine**: Generate a new edit that honors your feedback
-
-The refinement context is passed back to the orchestrator:
 ```typescript
-{
-  previousEdit: "The method was executed...",
+// Detected as GENERATION (not edit):
+"add a discussion section"
+"write an abstract"
+"generate a conclusion"
+"expand on this point"
+
+// When detected:
+- Temperature raised to 0.6
+- maxTokens set to 4000
+- Prompt allows "rewrite, expand, restructure"
+- For ADD requests: original + "\n\n" + new_content
+```
+
+### Refinement Context
+
+When users provide feedback on a suggested edit, their current text and feedback become critique issues:
+
+```typescript
+refinementContext: {
+  previousEdit: "The methodology was executed...",
   userCurrentText: "The method was implemented...",  // After toggles
   userFeedback: "Don't change 'implemented'",
   rejectedChanges: ["executed → implemented (reverted)"]
 }
+// Treated as highest-priority critique issues in next iteration
 ```
 
-This creates a collaborative loop. You're not just accepting or rejecting—you're guiding the AI toward exactly what you want.
+---
 
-## Handling Large Documents
+## 8. API Reference
 
-One challenge we hit: users selecting entire documents and asking to "add a discussion section."
+| Endpoint | Purpose |
+|----------|---------|
+| `POST /api/document/edit` | Generate a suggested edit |
+| `POST /api/document/edit-decision` | Record accept/reject, trigger learning |
+| `GET /api/preferences` | Load base style + profiles |
+| `PUT /api/preferences/base-style` | Update global style |
+| `POST /api/preferences/profiles` | Create audience profile |
+| `GET /api/documents/{id}/preferences` | Get document-specific adjustments |
 
-The naive approach—asking the LLM to output the entire document plus new content—fails spectacularly. A 64KB document exceeds output token limits.
+---
 
-Our solution: detect "add" requests and only generate the new content:
+## 9. File Structure
 
-```typescript
-const isAddRequest = /\b(add|draft|write)\s+(a|an)?\s*(discussion|conclusion)/i
-  .test(instruction);
-
-if (isAddRequest) {
-  // Generate only the new section
-  const newSection = await generateNewSection(instruction, documentContext);
-  // Append it ourselves
-  return originalContent + '\n\n' + newSection;
-}
+```
+src/
+├── agents/
+│   ├── orchestrator-agent.ts   # Main coordination loop
+│   ├── intent-agent.ts         # Document/paragraph analysis
+│   ├── prompt-agent.ts         # Prompt construction
+│   ├── critique-agent.ts       # Fast evaluation (latency-critical)
+│   ├── learning-agent.ts       # Preference learning from feedback
+│   └── constraint-extraction-agent.ts  # External doc parsing
+│
+├── memory/
+│   ├── preference-store.ts     # Global preferences (base + profiles)
+│   ├── document-preferences.ts # Per-document adjustments
+│   └── config-store.ts         # API keys, settings
+│
+├── app/api/
+│   ├── document/
+│   │   ├── edit/route.ts       # POST: generate edit
+│   │   ├── edit-decision/route.ts  # POST: record decision
+│   │   └── analyze/route.ts    # POST: analyze structure
+│   │
+│   └── preferences/
+│       ├── route.ts            # GET/PUT global preferences
+│       ├── base-style/route.ts # PUT base style
+│       └── profiles/route.ts   # CRUD audience profiles
+│
+└── types/
+    └── index.ts                # All TypeScript interfaces
 ```
 
-The LLM sees the full document as context but only outputs the new part. Much more reliable.
+---
 
-## Syntax-Aware Editing
-
-Academic users often write in LaTeX. We can't just treat `\begin{abstract}` as regular text.
-
-Auto-detection identifies the syntax mode:
-```typescript
-const isLatex = /\\begin\{|\\end\{|\\section|\\cite/.test(content);
-const isMarkdown = /^#{1,6}\s|^\*\*|^```/.test(content);
-```
-
-Then mode-specific instructions go into the prompt:
-```
-CRITICAL SYNTAX REQUIREMENT - LaTeX:
-- Use proper LaTeX commands (e.g., \textbf{}, \emph{}, \cite{})
-- Include BOTH opening AND closing tags for environments
-- Preserve existing LaTeX structure
-```
-
-Smart-split also respects syntax boundaries—we won't split in the middle of a `\begin{equation}...\end{equation}` block.
-
-## What We Learned
+## 10. What We Learned
 
 Building Styler taught us a few things about AI writing assistants:
 
-**1. Multi-agent beats monolithic.** Separating intent analysis, prompt building, and critique into distinct agents makes each one better and the whole system more debuggable.
+**1. Multi-agent beats monolithic.** Separating intent analysis, prompt building, critique, and learning into distinct agents makes each one better and the whole system more debuggable. The `agentTrace` log shows exactly what each agent did.
 
-**2. Learning must be conservative.** Early versions learned too aggressively from single data points. Now we require 5+ consistent signals before adding avoid-word rules.
+**2. Learning must be conservative.** Early versions learned too aggressively from single data points. Now we require dampening (0.35-0.5x) and confidence thresholds to prevent oscillation.
 
 **3. Users want control, not automation.** The toggle-based diff view and iterative refinement loop are more important than fully automated edits. Users want to guide, not delegate.
 
@@ -333,61 +437,24 @@ Building Styler taught us a few things about AI writing assistants:
 
 **5. Intent matters more than style.** Preserving what a paragraph is *trying to do* is more important than matching surface-level style patterns. The Intent Agent was a late addition but made the biggest quality difference.
 
-## Recent Additions
+**6. Separate latency-critical from thorough.** Splitting Critique (fast, runs during edit loop) from Learning (thorough, runs after decisions) enables using different models optimized for each use case.
 
-### Chat Assistant
+---
 
-We added an interactive chat panel that integrates with your document and preferences:
+## 11. Try It
 
-- **General Chat**: Ask writing questions, get advice based on your configured style
-- **Document Chat**: Select cells and get feedback on them specifically
-- **Alignment Score**: Check how well your content matches your preference profile
+Styler is open source. Clone the repo and explore:
 
-The chat uses the same preference context as the editor, so advice is tailored to your style.
+```bash
+git clone https://github.com/p-koo/styler.git
+cd styler
+npm install
+npm run dev
+```
 
-### Keyboard Shortcuts
+The key insight: don't just prompt an LLM—orchestrate specialized agents that understand context, evaluate quality, and learn from feedback.
 
-Power users wanted faster navigation. We added a full set of shortcuts:
-
-| Shortcut | Action |
-|----------|--------|
-| `↑` / `↓` | Navigate cells |
-| `Shift + ↑/↓` | Extend selection |
-| `Enter` | Edit selected cell |
-| `Delete` | Delete selected cells |
-| `Cmd/Ctrl + C/X/V` | Copy/Cut/Paste |
-| `Cmd/Ctrl + Z` | Undo/Redo |
-
-### Cell Controls
-
-Colab-style toolbar on each cell: move up, move down, delete. Appears on hover, stays out of the way otherwise.
-
-### Prettify
-
-PDF imports are messy—page numbers, broken lines, artifacts everywhere. The "Prettify" function (formerly "Clean") uses AI to:
-- Merge fragmented sentences into proper paragraphs
-- Remove page numbers and PDF artifacts
-- Fix broken words split across lines
-- Group LaTeX packages compactly
-
-It's aggressive by design—cleaning up noise, not preserving it.
-
-## Try It Yourself
-
-Styler is open source. The core agents are in `src/agents/`:
-- `orchestrator-agent.ts` - Main coordination loop
-- `intent-agent.ts` - Document/paragraph analysis
-- `prompt-agent.ts` - Context-aware prompt building
-- `critique-agent.ts` - Fast edit evaluation (runs during edit loop)
-- `learning-agent.ts` - Preference learning from feedback (runs after decisions)
-
-The preference system lives in `src/memory/`:
-- `preference-store.ts` - Global preferences
-- `document-preferences.ts` - Per-document adjustments
-
-If you're building AI writing tools, we hope our architecture gives you ideas. The key insight: don't just prompt an LLM—orchestrate multiple specialized agents that understand context, evaluate quality, and learn from feedback.
-
-Your users' voices are worth preserving.
+**Your users' voices are worth preserving.**
 
 ---
 

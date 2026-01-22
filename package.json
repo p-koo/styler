@@ -1,6 +1,6 @@
 {
   "name": "styler",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "AI-powered document editing that learns your writing style",
   "main": "electron/main.js",
   "scripts": {
@@ -11,9 +11,9 @@
     "bootstrap": "npx tsx src/bootstrap/cli.ts",
     "electron:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:3000 && NODE_ENV=development electron .\"",
     "electron:build": "node -e \"const fs=require('fs'); if(fs.existsSync('.env')){fs.renameSync('.env','.env.bak')}\" && next build && node -e \"const fs=require('fs'); const p=require('path'); const rmrf=(d)=>{if(fs.existsSync(d)){fs.rmSync(d,{recursive:true})}}; rmrf(p.join('.next','standalone','data')); rmrf(p.join('.next','standalone','documents')); console.log('Cleaned user data from standalone build')\" && node -e \"const fs=require('fs'); if(fs.existsSync('.env.bak')){fs.renameSync('.env.bak','.env')}\" && electron-builder",
-    "electron:build:mac": "next build && electron-builder --mac",
-    "electron:build:win": "next build && electron-builder --win",
-    "electron:build:linux": "next build && electron-builder --linux"
+    "electron:build:mac": "node -e \"const fs=require('fs'); if(fs.existsSync('.env')){fs.renameSync('.env','.env.bak')}\" && next build && node -e \"const fs=require('fs'); const p=require('path'); const rm=(f)=>{if(fs.existsSync(f))fs.rmSync(f,{recursive:true})}; rm(p.join('.next','standalone','.env')); rm(p.join('.next','standalone','data')); rm(p.join('.next','standalone','documents')); console.log('Cleaned sensitive data from build')\" && node -e \"const fs=require('fs'); if(fs.existsSync('.env.bak')){fs.renameSync('.env.bak','.env')}\" && electron-builder --mac",
+    "electron:build:win": "node -e \"const fs=require('fs'); if(fs.existsSync('.env')){fs.renameSync('.env','.env.bak')}\" && next build && node -e \"const fs=require('fs'); const p=require('path'); const rm=(f)=>{if(fs.existsSync(f))fs.rmSync(f,{recursive:true})}; rm(p.join('.next','standalone','.env')); rm(p.join('.next','standalone','data')); rm(p.join('.next','standalone','documents')); console.log('Cleaned sensitive data from build')\" && node -e \"const fs=require('fs'); if(fs.existsSync('.env.bak')){fs.renameSync('.env.bak','.env')}\" && electron-builder --win",
+    "electron:build:linux": "node -e \"const fs=require('fs'); if(fs.existsSync('.env')){fs.renameSync('.env','.env.bak')}\" && next build && node -e \"const fs=require('fs'); const p=require('path'); const rm=(f)=>{if(fs.existsSync(f))fs.rmSync(f,{recursive:true})}; rm(p.join('.next','standalone','.env')); rm(p.join('.next','standalone','data')); rm(p.join('.next','standalone','documents')); console.log('Cleaned sensitive data from build')\" && node -e \"const fs=require('fs'); if(fs.existsSync('.env.bak')){fs.renameSync('.env.bak','.env')}\" && electron-builder --linux"
   },
   "keywords": [],
   "author": "Peter Koo",

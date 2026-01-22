@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import Header from '@/components/Header';
 
-type Section = 'getting-started' | 'editing' | 'cells' | 'profiles' | 'chat' | 'shortcuts' | 'tips';
+type Section = 'getting-started' | 'editing' | 'cells' | 'profiles' | 'chat' | 'shortcuts' | 'tips' | 'whitepaper' | 'blog';
 
 export default function GuidePage() {
   const [activeSection, setActiveSection] = useState<Section>('getting-started');
@@ -17,6 +17,11 @@ export default function GuidePage() {
     { id: 'chat', title: 'Chat Assistant', icon: '💬' },
     { id: 'shortcuts', title: 'Keyboard Shortcuts', icon: '⌨️' },
     { id: 'tips', title: 'Tips & Tricks', icon: '💡' },
+  ];
+
+  const docSections: { id: Section; title: string; icon: string; color: string }[] = [
+    { id: 'whitepaper', title: 'Whitepaper', icon: '📄', color: 'blue' },
+    { id: 'blog', title: 'Technical Blog', icon: '📝', color: 'purple' },
   ];
 
   return (
@@ -46,7 +51,34 @@ export default function GuidePage() {
             ))}
           </nav>
 
-          <div className="mt-8 pt-4 border-t border-[var(--border)]">
+          {/* Documentation Section */}
+          <div className="mt-6 pt-4 border-t border-[var(--border)]">
+            <h2 className="text-sm font-semibold text-[var(--muted-foreground)] uppercase tracking-wide mb-3">
+              Documentation
+            </h2>
+            <nav className="space-y-2">
+              {docSections.map((section) => (
+                <button
+                  key={section.id}
+                  onClick={() => setActiveSection(section.id)}
+                  className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors border-2 ${
+                    activeSection === section.id
+                      ? section.color === 'blue'
+                        ? 'border-blue-500 bg-blue-500/10 text-blue-700 dark:text-blue-300'
+                        : 'border-purple-500 bg-purple-500/10 text-purple-700 dark:text-purple-300'
+                      : section.color === 'blue'
+                        ? 'border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/30'
+                        : 'border-purple-300 dark:border-purple-700 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-950/30'
+                  }`}
+                >
+                  <span>{section.icon}</span>
+                  {section.title}
+                </button>
+              ))}
+            </nav>
+          </div>
+
+          <div className="mt-6 pt-4 border-t border-[var(--border)]">
             <Link
               href="/editor"
               className="block w-full text-center px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-lg text-sm hover:opacity-90"
@@ -65,6 +97,8 @@ export default function GuidePage() {
           {activeSection === 'chat' && <ChatSection />}
           {activeSection === 'shortcuts' && <ShortcutsSection />}
           {activeSection === 'tips' && <TipsSection />}
+          {activeSection === 'whitepaper' && <WhitepaperSection />}
+          {activeSection === 'blog' && <BlogSection />}
         </main>
       </div>
     </div>
@@ -488,6 +522,235 @@ function TipsSection() {
           <li><strong>Check your profile</strong> - Wrong audience profile leads to wrong edits</li>
         </ul>
       </SubSection>
+    </div>
+  );
+}
+
+function WhitepaperSection() {
+  return (
+    <div className="space-y-8 prose prose-slate dark:prose-invert max-w-none">
+      <div className="not-prose">
+        <div className="inline-block px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-sm rounded-full mb-4">
+          Whitepaper
+        </div>
+        <h1 className="text-3xl font-bold text-[var(--foreground)] mb-2">Styler: Adaptive Document Editing with Multi-Agent AI</h1>
+        <p className="text-[var(--muted-foreground)]">Technical overview of the ADAPT system architecture</p>
+      </div>
+
+      <div className="not-prose p-4 bg-[var(--muted)]/50 rounded-lg">
+        <h3 className="font-semibold text-[var(--foreground)] mb-2">Abstract</h3>
+        <p className="text-[var(--muted-foreground)] text-sm">
+          Styler is an AI-powered document editor that learns and adapts to your personal writing style. Unlike generic AI writing assistants that impose a uniform voice, Styler preserves your authentic style while improving clarity, consistency, and flow. At its core is <strong>ADAPT</strong> (Adaptive Document Alignment via Prompt Transformations)—a multi-agent system that coordinates specialized AI agents to understand context, analyze intent, generate style-aligned suggestions, and continuously improve through your feedback.
+        </p>
+      </div>
+
+      <DocSection title="1. The Problem with Generic AI Writing Tools">
+        <p>Traditional AI writing assistants treat all users the same. They apply generic improvements that often strip away the writer&apos;s unique voice, resulting in homogenized text that sounds like every other AI-assisted document.</p>
+        <p>Writers face a frustrating trade-off: accept AI suggestions that don&apos;t sound like them, or spend time manually reverting changes to preserve their style.</p>
+        <h4>The Styler Approach</h4>
+        <ul>
+          <li><strong>Learn from your writing history</strong> — Import ChatGPT conversations or existing documents to bootstrap your style profile</li>
+          <li><strong>Preserve your voice</strong> — Edits align with your established patterns for formality, hedging, verbosity, and word choice</li>
+          <li><strong>Continuous improvement</strong> — Every accept/reject decision teaches the system more about your preferences</li>
+          <li><strong>Context-aware editing</strong> — Understand document structure, paragraph intent, and section purpose before suggesting changes</li>
+        </ul>
+      </DocSection>
+
+      <DocSection title="2. Multi-Agent Architecture">
+        <p>Styler&apos;s intelligence comes from coordinating five specialized agents:</p>
+        <div className="not-prose my-4 p-4 bg-[var(--muted)]/30 rounded-lg font-mono text-sm overflow-x-auto">
+          <pre>{`┌─────────────────────────────────────────────────────────────┐
+│                    ORCHESTRATOR AGENT                        │
+│         Coordinates the edit-critique-refine loop            │
+└─────────────────────────────────────────────────────────────┘
+                              │
+         ┌────────────────────┼────────────────────┐
+         ▼                    ▼                    ▼
+┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐
+│  INTENT AGENT   │  │  PROMPT AGENT   │  │ CRITIQUE AGENT  │
+│                 │  │                 │  │                 │
+│ • Document goals│  │ • Style merging │  │ • Alignment     │
+│ • Paragraph     │  │ • Context       │  │   scoring       │
+│   purpose       │  │   building      │  │ • Issue         │
+│ • Connection    │  │ • Mode-specific │  │   detection     │
+│   analysis      │  │   instructions  │  │ • Learning      │
+└─────────────────┘  └─────────────────┘  └─────────────────┘`}</pre>
+        </div>
+        <ul>
+          <li><strong>Orchestrator Agent</strong>: Central coordinator managing the edit-critique-refine loop</li>
+          <li><strong>Intent Agent</strong>: Analyzes document goals and paragraph purpose before editing</li>
+          <li><strong>Prompt Agent</strong>: Builds context-aware prompts combining style preferences, document goals, and learned rules</li>
+          <li><strong>Critique Agent</strong>: Evaluates edit quality on a 0-1 alignment scale, triggers re-generation if below threshold</li>
+          <li><strong>Constraint Extraction Agent</strong>: Parses external requirements (journal guidelines, style guides)</li>
+        </ul>
+      </DocSection>
+
+      <DocSection title="3. Three-Layer Preference System">
+        <p>Style is controlled at three levels:</p>
+        <div className="not-prose space-y-3 my-4">
+          <div className="p-3 border-l-4 border-blue-500 bg-blue-50 dark:bg-blue-950/30 rounded-r">
+            <div className="font-semibold text-blue-700 dark:text-blue-300">Layer 1: Base Style (Global)</div>
+            <div className="text-sm text-[var(--muted-foreground)]">Verbosity, Formality, Hedging, Format Rules, Learned Rules</div>
+          </div>
+          <div className="p-3 border-l-4 border-green-500 bg-green-50 dark:bg-green-950/30 rounded-r">
+            <div className="font-semibold text-green-700 dark:text-green-300">Layer 2: Audience Profiles (Switchable)</div>
+            <div className="text-sm text-[var(--muted-foreground)]">Academic Journal, Grant Proposal, Technical Blog, Business Report</div>
+          </div>
+          <div className="p-3 border-l-4 border-purple-500 bg-purple-50 dark:bg-purple-950/30 rounded-r">
+            <div className="font-semibold text-purple-700 dark:text-purple-300">Layer 3: Document Adjustments (Per-Document)</div>
+            <div className="text-sm text-[var(--muted-foreground)]">Fine-grained sliders, document goals, learned rules from this document</div>
+          </div>
+        </div>
+      </DocSection>
+
+      <DocSection title="4. Learning System">
+        <p>Styler learns from three sources of signal:</p>
+        <ol>
+          <li><strong>Explicit Feedback</strong> — When you reject an edit and specify why (too formal, changed meaning, over-edited)</li>
+          <li><strong>Diff Pattern Learning</strong> — When you partially accept an edit (toggle some changes off)</li>
+          <li><strong>Decision History</strong> — Every accept/reject decision is recorded and patterns emerge over time</li>
+        </ol>
+        <div className="not-prose p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg text-sm my-4">
+          <strong>Conservative Learning:</strong> Word avoidance rules require 5+ consistent rejections before activating. Similar rules are consolidated. Contradictory signals are not learned.
+        </div>
+      </DocSection>
+
+      <DocSection title="5. Edit-Critique-Refine Loop">
+        <div className="not-prose my-4 p-4 bg-[var(--muted)]/30 rounded-lg font-mono text-sm overflow-x-auto">
+          <pre>{`User Request → Intent Analysis → Prompt Building → LLM Generation
+                                                          ↓
+                                                     Critique
+                                                          ↓
+                                               Score < 0.8? → Refine
+                                                          ↓
+                                               Present to User
+                                                          ↓
+                                               User Decision
+                                                          ↓
+                                                     Learning`}</pre>
+        </div>
+        <p>The critique step ensures quality before presentation. If alignment score is below 0.8, the system refines up to 3 times before showing to the user.</p>
+      </DocSection>
+
+      <DocSection title="6. Privacy & Technical Details">
+        <ul>
+          <li><strong>All data stored locally</strong> — Documents, preferences, and history never leave your machine</li>
+          <li><strong>API calls contain only document text</strong> — No metadata or user information transmitted</li>
+          <li><strong>No cloud sync</strong> — Full control over your data</li>
+        </ul>
+        <p><strong>Stack:</strong> React 19, TypeScript, Tailwind CSS, Next.js API Routes, Anthropic Claude / OpenAI GPT / Ollama</p>
+      </DocSection>
+    </div>
+  );
+}
+
+function BlogSection() {
+  return (
+    <div className="space-y-8 prose prose-slate dark:prose-invert max-w-none">
+      <div className="not-prose">
+        <div className="inline-block px-3 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-sm rounded-full mb-4">
+          Technical Blog
+        </div>
+        <h1 className="text-3xl font-bold text-[var(--foreground)] mb-2">Building an AI Writing Assistant That Actually Sounds Like You</h1>
+        <p className="text-[var(--muted-foreground)]">How we built a multi-agent system that learns your writing style instead of replacing it</p>
+      </div>
+
+      <p className="text-lg">If you&apos;ve ever used ChatGPT to help edit your writing, you&apos;ve probably noticed something: the output sounds like ChatGPT, not like you. It&apos;s polished, sure, but it&apos;s also generic.</p>
+
+      <DocSection title="The Core Problem: Style Drift">
+        <p>When you ask an LLM to &quot;improve&quot; your writing, it applies its default preferences:</p>
+        <ul>
+          <li>More hedging (&quot;It could be argued that...&quot;)</li>
+          <li>Certain word choices (&quot;utilize&quot; instead of &quot;use&quot;)</li>
+          <li>Generic transitions (&quot;Furthermore,&quot; &quot;Moreover,&quot;)</li>
+          <li>A particular level of formality</li>
+        </ul>
+        <p>These aren&apos;t bad choices—they&apos;re just not <em>your</em> choices. The naive solution is prompt engineering: &quot;Edit this but keep my voice.&quot; But LLMs don&apos;t know what your voice <em>is</em>.</p>
+      </DocSection>
+
+      <DocSection title="Our Solution: ADAPT">
+        <p>We built <strong>ADAPT</strong> (Adaptive Document Alignment via Prompt Transformations)—a multi-agent system that coordinates specialized AI agents to understand your style, analyze document intent, generate aligned suggestions, and learn from your feedback.</p>
+        <p>The key insight: instead of sending text directly to an LLM with a generic &quot;improve this&quot; prompt, we orchestrate multiple agents that each handle a specific aspect of the editing process.</p>
+      </DocSection>
+
+      <DocSection title="Example: How a Prompt Gets Built">
+        <p>Let&apos;s walk through a concrete example. Say you have these preferences configured:</p>
+
+        <div className="not-prose my-4 space-y-3">
+          <div className="p-3 bg-[var(--muted)]/50 rounded-lg">
+            <div className="font-semibold text-sm text-[var(--foreground)] mb-2">Base Style:</div>
+            <code className="text-xs">verbosity: &apos;terse&apos;, formalityLevel: 4, hedgingStyle: &apos;cautious&apos;</code>
+          </div>
+          <div className="p-3 bg-[var(--muted)]/50 rounded-lg">
+            <div className="font-semibold text-sm text-[var(--foreground)] mb-2">Audience Profile: Academic Journal</div>
+            <code className="text-xs">jargonLevel: &apos;heavy&apos;, emphasisPoints: [&apos;methodology&apos;, &apos;reproducibility&apos;]</code>
+          </div>
+          <div className="p-3 bg-[var(--muted)]/50 rounded-lg">
+            <div className="font-semibold text-sm text-[var(--foreground)] mb-2">Document Adjustments:</div>
+            <code className="text-xs">hedgingAdjust: +1.0, additionalAvoidWords: [&apos;breakthrough&apos;, &apos;novel&apos;]</code>
+          </div>
+        </div>
+
+        <p>The Prompt Agent merges these and generates this system prompt:</p>
+
+        <div className="not-prose my-4 p-4 bg-[var(--muted)]/30 rounded-lg font-mono text-xs overflow-x-auto">
+          <pre>{`VERBOSITY: EXTREME COMPRESSION MODE - YOUR #1 PRIORITY IS CUTTING WORDS
+TARGET: Remove 30-50% of words. If you only cut 10-20%, you have FAILED.
+
+FORMALITY: MAXIMUM FORMAL/ACADEMIC MODE - STRICT REQUIREMENT
+- Use formal, academic language throughout. This is non-negotiable.
+- NEVER use contractions. Replace: don't→do not, isn't→is not...
+
+HEDGING: CAUTIOUS MODE
+- Use appropriate hedging language throughout.
+- ADD qualifiers: "may", "might", "suggests", "appears to"...
+
+AUDIENCE CONTEXT: Academic Journal
+Use appropriate technical terminology freely. Assume audience expertise.
+Emphasize: methodology, reproducibility.`}</pre>
+        </div>
+
+        <p>The combined effect: <strong>Terse verbosity</strong> aggressively cuts filler words, <strong>high formality</strong> ensures academic register, <strong>cautious hedging</strong> adds appropriate qualifiers, and <strong>heavy jargon</strong> is allowed by audience profile.</p>
+      </DocSection>
+
+      <DocSection title="Learning From Feedback">
+        <p>The magic happens when you accept or reject edits. We learn from three signals:</p>
+        <ol>
+          <li><strong>Explicit Rejection Feedback</strong> — &quot;Too formal&quot; maps to formalityAdjust -= 0.3</li>
+          <li><strong>Diff Pattern Learning</strong> — If you consistently revert &quot;demonstrate&quot; → &quot;show&quot;, we learn to avoid that substitution</li>
+          <li><strong>Decision History Analysis</strong> — Every decision is recorded for pattern extraction</li>
+        </ol>
+      </DocSection>
+
+      <DocSection title="What We Learned">
+        <ul>
+          <li><strong>Multi-agent beats monolithic.</strong> Separating intent analysis, prompt building, and critique into distinct agents makes each one better.</li>
+          <li><strong>Learning must be conservative.</strong> We require 5+ consistent signals before adding avoid-word rules.</li>
+          <li><strong>Users want control, not automation.</strong> The toggle-based diff view and iterative refinement loop are more important than fully automated edits.</li>
+          <li><strong>Intent matters more than style.</strong> Preserving what a paragraph is <em>trying to do</em> is more important than matching surface-level style patterns.</li>
+        </ul>
+      </DocSection>
+
+      <DocSection title="Try It Yourself">
+        <p>Styler is open source. The core agents are in <code>src/agents/</code>:</p>
+        <ul>
+          <li><code>orchestrator-agent.ts</code> - Main coordination loop</li>
+          <li><code>intent-agent.ts</code> - Document/paragraph analysis</li>
+          <li><code>prompt-agent.ts</code> - Context-aware prompt building</li>
+          <li><code>critique-agent.ts</code> - Edit evaluation and learning</li>
+        </ul>
+        <p>If you&apos;re building AI writing tools, we hope our architecture gives you ideas. The key insight: don&apos;t just prompt an LLM—orchestrate multiple specialized agents that understand context, evaluate quality, and learn from feedback.</p>
+        <p><strong>Your users&apos; voices are worth preserving.</strong></p>
+      </DocSection>
+    </div>
+  );
+}
+
+function DocSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-3">
+      <h2 className="text-xl font-semibold text-[var(--foreground)]">{title}</h2>
+      <div className="text-[var(--foreground)] space-y-3">{children}</div>
     </div>
   );
 }

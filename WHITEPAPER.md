@@ -243,6 +243,30 @@ Useful for:
 - Restructuring argument flow
 - Reducing redundancy across sections
 
+### 5.4 Keyboard Shortcuts
+
+Full keyboard navigation for power users:
+
+| Shortcut | Action |
+|----------|--------|
+| `↑` / `↓` | Navigate between cells |
+| `Shift + ↑/↓` | Extend selection |
+| `Enter` | Edit selected cell |
+| `Escape` | Exit edit mode / clear selection |
+| `Delete` / `Backspace` | Delete selected cells |
+| `Cmd/Ctrl + C` | Copy selected cells |
+| `Cmd/Ctrl + X` | Cut selected cells |
+| `Cmd/Ctrl + V` | Paste cells |
+| `Cmd/Ctrl + A` | Select all cells |
+| `Cmd/Ctrl + Z` | Undo |
+| `Cmd/Ctrl + Shift + Z` | Redo |
+
+### 5.5 Cell Controls
+
+Each cell has a hover toolbar (Colab-style):
+- **Move Up/Down**: Reorder cells with one click
+- **Delete**: Remove the cell
+
 ---
 
 ## 6. Interactive Refinement
@@ -353,16 +377,61 @@ Each mode has specialized handling:
 
 ---
 
-## 9. Technical Details
+## 9. Chat Assistant
 
-### 9.1 Stack
+An integrated chat panel provides interactive assistance alongside the editor.
+
+### 9.1 Chat Modes
+
+**General Chat**: Ask writing questions, get style advice, discuss best practices. Uses your configured preferences to tailor recommendations.
+
+**Document Chat**: Select specific cells and get targeted feedback:
+- Analysis of how well content aligns with your style
+- Suggestions for improvement
+- Discussion of tone, clarity, and structure
+
+### 9.2 Alignment Score
+
+Request an alignment score to see how well your content matches your preference profile:
+
+```
+Alignment Score: 0.82
+Profiles Used: Base (moderate verbosity), Academic Journal
+Analysis: Content aligns well with formal academic style.
+          Hedging is appropriate but verbosity could be reduced.
+Suggestions:
+  - Consider tightening the opening paragraph
+  - Some sentences could be more direct
+```
+
+The alignment analysis uses the same Critique Agent infrastructure as the edit loop.
+
+---
+
+## 10. Prettify (Document Cleanup)
+
+The Prettify function cleans up messy imports (especially from PDFs):
+
+- **Merge fragmented sentences** into proper paragraphs
+- **Remove PDF artifacts** — page numbers, line numbers, `[1]` references
+- **Fix broken words** split across lines (e.g., "docu-\nment" → "document")
+- **Remove noise** — random characters, garbled text
+- **Group LaTeX packages** compactly (no blank lines between `\usepackage` commands)
+
+Unlike conservative formatting tools, Prettify is aggressive—it removes artifacts rather than preserving them.
+
+---
+
+## 11. Technical Details
+
+### 11.1 Stack
 
 - **Frontend**: React 19, TypeScript, Tailwind CSS, CodeMirror
 - **Backend**: Next.js API Routes
 - **LLM Providers**: Anthropic Claude, OpenAI GPT, Ollama (local)
 - **Storage**: Local JSON files (no cloud dependency)
 
-### 9.2 Key Parameters
+### 11.2 Key Parameters
 
 | Parameter | Value | Purpose |
 |-----------|-------|---------|
@@ -372,7 +441,7 @@ Each mode has specialized handling:
 | Edit temperature | 0.25 | Low for consistent edits |
 | Generation temperature | 0.6 | Higher for creative content |
 
-### 9.3 Privacy
+### 11.3 Privacy
 
 - **All data stored locally** — Documents, preferences, and history never leave your machine
 - **API calls contain only document text** — No metadata or user information transmitted
@@ -380,15 +449,15 @@ Each mode has specialized handling:
 
 ---
 
-## 10. Getting Started
+## 12. Getting Started
 
-### 10.1 Initial Setup
+### 12.1 Initial Setup
 
 1. Configure API keys (Anthropic, OpenAI, or Ollama for local inference)
 2. Optionally import ChatGPT conversation history to bootstrap your style profile
 3. Create or adjust audience profiles for your common writing contexts
 
-### 10.2 Editing Workflow
+### 12.2 Editing Workflow
 
 1. **Load document** — Paste, import, or start fresh
 2. **Set context** — Choose audience profile, adjust style sliders
@@ -397,7 +466,7 @@ Each mode has specialized handling:
 5. **Accept** — Commit changes that work; reject those that don't
 6. **Learn** — System improves with every decision
 
-### 10.3 Building Your Profile
+### 12.3 Building Your Profile
 
 The more you use Styler, the better it understands you:
 
@@ -407,7 +476,7 @@ The more you use Styler, the better it understands you:
 
 ---
 
-## 11. Conclusion
+## 13. Conclusion
 
 Styler represents a new approach to AI-assisted writing: one that treats your voice as something to preserve rather than override. Through multi-agent coordination, intent analysis, and continuous learning, it delivers suggestions that sound like you—just polished.
 

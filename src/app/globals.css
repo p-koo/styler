@@ -39,3 +39,30 @@ body {
   color: var(--foreground);
   font-family: system-ui, -apple-system, sans-serif;
 }
+
+/* Orange highlight for text selection within cells (for targeted editing) */
+[data-cell-container] ::selection {
+  background: #f97316;
+  color: white;
+}
+
+[data-cell-container] ::-moz-selection {
+  background: #f97316;
+  color: white;
+}
+
+/* Toast slide-in animation */
+@keyframes slide-in {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-in {
+  animation: slide-in 0.2s ease-out;
+}

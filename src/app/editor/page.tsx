@@ -11,6 +11,10 @@ import DocumentProfilePanel from '@/components/DocumentProfilePanel';
 import FeedbackPanel, { type FeedbackPanelState, DEFAULT_FEEDBACK_STATE } from '@/components/FeedbackPanel';
 import SyntaxHighlighter, { type HighlightMode } from '@/components/SyntaxHighlighter';
 import ApiKeyWarning from '@/components/ApiKeyWarning';
+import SelectionEditPopover from '@/components/SelectionEditPopover';
+import ChatPanel from '@/components/ChatPanel';
+import { ToastContainer, showToast } from '@/components/Toast';
+import { useTextSelection, type TextSelection } from '@/hooks/useTextSelection';
 import type { AudienceProfile, CritiqueAnalysis } from '@/types';
 
 // Shared theme storage key (same as settings page)
@@ -29,6 +33,8 @@ import {
   type DocumentHistory,
 } from '@/memory/document-history';
 import { smartSplit, cleanupCells, type SyntaxMode } from '@/utils/smart-split';
+import { Document as DocxDocument, Packer, Paragraph, TextRun, HeadingLevel } from 'docx';
+import { jsPDF } from 'jspdf';
 
 interface DocumentSection {
   id: string;
@@ -91,6 +97,7 @@ interface Document {
 }
 
 const MODEL_STORAGE_KEY = 'preference-editor-model';
+const LAST_DOCUMENT_STORAGE_KEY = 'preference-last-document';
 
 // Auto-detect syntax mode from content
 function detectSyntaxMode(content: string): HighlightMode {
@@ -162,6 +169,8 @@ export default function EditorPage() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [insertAtIndex, setInsertAtIndex] = useState<number | null>(null); // null = at end, number = after that index
   const [isExporting, setIsExporting] = useState(false);
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
   const [historyIndex, setHistoryIndex] = useState<number | null>(null); // null = current state, 0 = most recent snapshot, etc.
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null); // For canceling LLM requests
@@ -172,7 +181,7 @@ export default function EditorPage() {
   const [showNavMenu, setShowNavMenu] = useState(false); // Navigation dropdown
   const [showFeedbackPanel, setShowFeedbackPanel] = useState(true); // Edit panel - visible by default
   const [feedbackStates, setFeedbackStates] = useState<Record<string, FeedbackPanelState>>({}); // Per-document feedback states
-  const [editMode, setEditMode] = useState<'vibe' | 'styler'>('vibe'); // Active tab in edit panel
+  const [editMode, setEditMode] = useState<'vibe' | 'styler'>('styler'); // Active tab in edit panel
   const [selectedStylerTemplates, setSelectedStylerTemplates] = useState<string[]>([]); // Multi-select Styler templates
   const [showNewDocModal, setShowNewDocModal] = useState(false); // New document creation modal
   const [newDocMode, setNewDocMode] = useState<'blank' | 'paste' | 'generate'>('blank'); // How to start new doc
@@ -185,6 +194,22 @@ export default function EditorPage() {
   const [searchResults, setSearchResults] = useState<number[]>([]); // Paragraph indices with matches
   const [currentSearchIndex, setCurrentSearchIndex] = useState(0); // Current match navigation
   const [compareVersions, setCompareVersions] = useState<[string | null, string | null]>([null, null]); // Version IDs to compare
+  const [showChatPanel, setShowChatPanel] = useState(false); // Chat assistant panel
+
+  // Text selection for targeted editing
+  const { selection: textSelection, clearSelection: clearTextSelection } = useTextSelection({
+    containerSelector: '[data-cell-container]',
+    cellDataAttribute: 'data-cell-index',
+  });
+  const [isSelectionEditing, setIsSelectionEditing] = useState(false);
+  const [selectionEditResult, setSelectionEditResult] = useState<{
+    originalText: string;
+    editedText: string;
+    instruction: string;
+    cellIndex: number;
+    startOffset: number;
+    endOffset: number;
+  } | null>(null);
 
   // Load history when document changes
   useEffect(() => {
@@ -200,13 +225,45 @@ export default function EditorPage() {
     }
   }, [document?.id]);
 
+  // Document order for manual reordering
+  const [documentOrder, setDocumentOrder] = useState<string[]>([]);
+
   // Load saved documents list from API on mount
   const loadDocumentsList = useCallback(async () => {
     try {
-      const res = await fetch('/api/documents');
-      if (res.ok) {
-        const data = await res.json();
-        setSavedDocuments(data.documents || []);
+      // Fetch documents and order in parallel
+      const [docsRes, orderRes] = await Promise.all([
+        fetch('/api/documents'),
+        fetch('/api/documents/order')
+      ]);
+
+      if (docsRes.ok) {
+        const docsData = await docsRes.json();
+        let documents = docsData.documents || [];
+
+        // Apply custom order if available
+        if (orderRes.ok) {
+          const orderData = await orderRes.json();
+          const order = orderData.order || [];
+          setDocumentOrder(order);
+
+          if (order.length > 0) {
+            // Sort documents by custom order, keeping unordered at end
+            documents = [...documents].sort((a: SavedDocumentInfo, b: SavedDocumentInfo) => {
+              const aIndex = order.indexOf(a.id);
+              const bIndex = order.indexOf(b.id);
+              // If both have order, use that
+              if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
+              // If only one has order, put ordered first
+              if (aIndex !== -1) return -1;
+              if (bIndex !== -1) return 1;
+              // Neither has order, sort by updatedAt
+              return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+            });
+          }
+        }
+
+        setSavedDocuments(documents);
       }
     } catch (e) {
       console.error('Failed to load documents list:', e);
@@ -308,6 +365,17 @@ export default function EditorPage() {
     return () => window.document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Close export menu when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(event.target as Node)) {
+        setShowExportMenu(false);
+      }
+    }
+    window.document.addEventListener('mousedown', handleClickOutside);
+    return () => window.document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   // Navigate to next/prev search result
   const navigateSearch = (direction: 'next' | 'prev') => {
     if (searchResults.length === 0) return;
@@ -341,6 +409,10 @@ export default function EditorPage() {
     setIsEditingTitle(false);
   }, [document, editingTitleValue]);
 
+  // Track save status to avoid spamming toasts
+  const lastSaveFailedRef = useRef(false);
+  const saveRetryCountRef = useRef(0);
+
   // Auto-save document (debounced)
   useEffect(() => {
     if (!document) return;
@@ -356,7 +428,7 @@ export default function EditorPage() {
         // Get current feedback state for this document
         const currentFeedbackState = feedbackStates[document.id];
 
-        await fetch('/api/documents', {
+        const response = await fetch('/api/documents', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -372,10 +444,34 @@ export default function EditorPage() {
             vibeSelectedPresets: currentFeedbackState?.selectedVibes || [],
           }),
         });
+
+        if (!response.ok) {
+          throw new Error('Save failed');
+        }
+
+        // If we recovered from a failure, show success
+        if (lastSaveFailedRef.current) {
+          showToast('Changes saved', 'success');
+          lastSaveFailedRef.current = false;
+          saveRetryCountRef.current = 0;
+        }
+
         // Silently refresh documents list
         loadDocumentsList();
       } catch (e) {
         console.error('Auto-save failed:', e);
+
+        // Only show error toast on first failure or after several retries
+        if (!lastSaveFailedRef.current) {
+          showToast('Changes not saved - check connection', 'error');
+          lastSaveFailedRef.current = true;
+        } else {
+          // Increment retry count and show periodic reminders
+          saveRetryCountRef.current++;
+          if (saveRetryCountRef.current % 5 === 0) {
+            showToast('Still unable to save - changes may be lost', 'error');
+          }
+        }
       }
     }, 1000);
 
@@ -386,18 +482,151 @@ export default function EditorPage() {
     };
   }, [document, loadDocumentsList, activeProfile, editorMode, editInstruction, feedbackStates]);
 
-  // Export document as .txt file
-  const handleExportDocument = useCallback(() => {
+  // Export document as Word (.docx) file
+  const handleExportWord = useCallback(async () => {
     if (!document || isExporting) return;
 
     setIsExporting(true);
+    setShowExportMenu(false);
     try {
-      // Build text content
+      // Build paragraphs for Word document
+      const paragraphs = document.cells.map((cell) => {
+        return new Paragraph({
+          children: [
+            new TextRun({
+              text: cell.content,
+              size: 24, // 12pt
+            }),
+          ],
+          spacing: { after: 200 },
+        });
+      });
+
+      // Create the document
+      const doc = new DocxDocument({
+        sections: [
+          {
+            properties: {},
+            children: [
+              // Title
+              new Paragraph({
+                children: [
+                  new TextRun({
+                    text: document.title,
+                    bold: true,
+                    size: 32, // 16pt
+                  }),
+                ],
+                heading: HeadingLevel.HEADING_1,
+                spacing: { after: 400 },
+              }),
+              ...paragraphs,
+            ],
+          },
+        ],
+      });
+
+      // Generate and download
+      const blob = await Packer.toBlob(doc);
+      const sanitizedTitle = document.title
+        .replace(/[^a-z0-9]/gi, '_')
+        .replace(/_+/g, '_')
+        .toLowerCase();
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const filename = `${sanitizedTitle}_${timestamp}.docx`;
+
+      const url = URL.createObjectURL(blob);
+      const a = window.document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      window.document.body.appendChild(a);
+      a.click();
+      window.document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      showToast('Exported as Word document', 'success');
+    } catch (e) {
+      console.error('Failed to export Word document:', e);
+      showToast('Failed to export Word document', 'error');
+    } finally {
+      setIsExporting(false);
+    }
+  }, [document, isExporting]);
+
+  // Export document as PDF file
+  const handleExportPdf = useCallback(() => {
+    if (!document || isExporting) return;
+
+    setIsExporting(true);
+    setShowExportMenu(false);
+    try {
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4',
+      });
+
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const margin = 20;
+      const maxWidth = pageWidth - margin * 2;
+      let yPosition = margin;
+
+      // Add title
+      pdf.setFontSize(18);
+      pdf.setFont('helvetica', 'bold');
+      const titleLines = pdf.splitTextToSize(document.title, maxWidth);
+      pdf.text(titleLines, margin, yPosition);
+      yPosition += titleLines.length * 8 + 10;
+
+      // Add content
+      pdf.setFontSize(11);
+      pdf.setFont('helvetica', 'normal');
+
+      for (const cell of document.cells) {
+        const lines = pdf.splitTextToSize(cell.content, maxWidth);
+
+        // Check if we need a new page
+        const lineHeight = 5;
+        const blockHeight = lines.length * lineHeight + 8;
+        if (yPosition + blockHeight > pageHeight - margin) {
+          pdf.addPage();
+          yPosition = margin;
+        }
+
+        pdf.text(lines, margin, yPosition);
+        yPosition += blockHeight;
+      }
+
+      // Save the PDF
+      const sanitizedTitle = document.title
+        .replace(/[^a-z0-9]/gi, '_')
+        .replace(/_+/g, '_')
+        .toLowerCase();
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const filename = `${sanitizedTitle}_${timestamp}.pdf`;
+
+      pdf.save(filename);
+      showToast('Exported as PDF', 'success');
+    } catch (e) {
+      console.error('Failed to export PDF:', e);
+      showToast('Failed to export PDF', 'error');
+    } finally {
+      setIsExporting(false);
+    }
+  }, [document, isExporting]);
+
+  // Export as plain text (renamed from handleExportDocument)
+  const handleExportTxt = useCallback(() => {
+    if (!document || isExporting) return;
+
+    setIsExporting(true);
+    setShowExportMenu(false);
+    try {
       const textContent = document.cells
         .map((p) => p.content)
         .join('\n\n');
 
-      // Create filename with timestamp to avoid overwriting
       const sanitizedTitle = document.title
         .replace(/[^a-z0-9]/gi, '_')
         .replace(/_+/g, '_')
@@ -405,7 +634,6 @@ export default function EditorPage() {
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
       const filename = `${sanitizedTitle}_${timestamp}.txt`;
 
-      // Create and trigger download
       const blob = new Blob([textContent], { type: 'text/plain' });
       const url = URL.createObjectURL(blob);
       const a = window.document.createElement('a');
@@ -415,9 +643,11 @@ export default function EditorPage() {
       a.click();
       window.document.body.removeChild(a);
       URL.revokeObjectURL(url);
+
+      showToast('Exported as text file', 'success');
     } catch (e) {
       console.error('Failed to export document:', e);
-      alert('Failed to export document');
+      showToast('Failed to export document', 'error');
     } finally {
       setIsExporting(false);
     }
@@ -434,6 +664,9 @@ export default function EditorPage() {
       setDocument(loadedDoc as Document);
       setSelectedCells(new Set());
       setLastSelectedIndex(null);
+
+      // Save as last opened document for restoration
+      localStorage.setItem(LAST_DOCUMENT_STORAGE_KEY, docId);
 
       // Restore the profile that was selected for this document
       if (loadedDoc.selectedProfileId !== undefined) {
@@ -471,9 +704,22 @@ export default function EditorPage() {
       }
     } catch (e) {
       console.error('Failed to load document:', e);
-      alert('Failed to load document');
+      showToast('Failed to load document', 'error');
     }
   }, []);
+
+  // Auto-restore last opened document on mount
+  const hasAttemptedRestore = useRef(false);
+  useEffect(() => {
+    // Only attempt once, when savedDocuments first loads
+    if (hasAttemptedRestore.current || document || savedDocuments.length === 0) return;
+    hasAttemptedRestore.current = true;
+
+    const lastDocId = localStorage.getItem(LAST_DOCUMENT_STORAGE_KEY);
+    if (lastDocId && savedDocuments.some(doc => doc.id === lastDocId)) {
+      handleLoadDocument(lastDocId);
+    }
+  }, [savedDocuments, document, handleLoadDocument]);
 
   // Delete a saved document
   const handleDeleteSavedDocument = useCallback(async (docId: string, e: React.MouseEvent) => {
@@ -489,13 +735,52 @@ export default function EditorPage() {
         setDocument(null);
       }
 
+      // If we deleted the last opened document, clear it from localStorage
+      const lastDocId = localStorage.getItem(LAST_DOCUMENT_STORAGE_KEY);
+      if (lastDocId === docId) {
+        localStorage.removeItem(LAST_DOCUMENT_STORAGE_KEY);
+      }
+
       // Refresh the documents list
       await loadDocumentsList();
     } catch (e) {
       console.error('Failed to delete document:', e);
-      alert('Failed to delete document');
+      showToast('Failed to delete document', 'error');
     }
   }, [document?.id, loadDocumentsList]);
+
+  // Reorder documents (move up or down)
+  const handleReorderDocument = useCallback(async (docId: string, direction: 'up' | 'down', e: React.MouseEvent) => {
+    e.stopPropagation();
+
+    const currentIndex = savedDocuments.findIndex(doc => doc.id === docId);
+    if (currentIndex === -1) return;
+
+    const newIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+    if (newIndex < 0 || newIndex >= savedDocuments.length) return;
+
+    // Create new order
+    const newDocs = [...savedDocuments];
+    const [removed] = newDocs.splice(currentIndex, 1);
+    newDocs.splice(newIndex, 0, removed);
+
+    // Update local state immediately for responsiveness
+    setSavedDocuments(newDocs);
+
+    // Save new order to server
+    const newOrder = newDocs.map(doc => doc.id);
+    setDocumentOrder(newOrder);
+
+    try {
+      await fetch('/api/documents/order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ documentIds: newOrder }),
+      });
+    } catch (e) {
+      console.error('Failed to save document order:', e);
+    }
+  }, [savedDocuments]);
 
   // Handle feedback panel state changes - memoized to prevent infinite loops
   const handleFeedbackStateChange = useCallback((state: FeedbackPanelState) => {
@@ -643,6 +928,138 @@ export default function EditorPage() {
     setSelectedCells(new Set());
     setLastSelectedIndex(null);
   }, []);
+
+  // Handle targeted selection edit - get edit suggestion
+  const handleSelectionEdit = useCallback(async (instruction: string) => {
+    if (!textSelection || !document) return;
+
+    const cell = document.cells[textSelection.cellIndex];
+    if (!cell) return;
+
+    setIsSelectionEditing(true);
+
+    try {
+      const res = await fetch('/api/document/edit-selection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          selectedText: textSelection.text,
+          fullCellContent: cell.content,
+          startOffset: textSelection.startOffset,
+          endOffset: textSelection.endOffset,
+          instruction,
+          profileId: activeProfile,
+          model: selectedModel || undefined,
+        }),
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || 'Edit failed');
+      }
+
+      const data = await res.json();
+
+      // Store the result for review (don't apply yet)
+      setSelectionEditResult({
+        originalText: textSelection.text,
+        editedText: data.editedSelection,
+        instruction,
+        cellIndex: textSelection.cellIndex,
+        startOffset: textSelection.startOffset,
+        endOffset: textSelection.endOffset,
+      });
+
+    } catch (error) {
+      console.error('Selection edit failed:', error);
+      showToast(error instanceof Error ? error.message : 'Selection edit failed', 'error');
+    } finally {
+      setIsSelectionEditing(false);
+    }
+  }, [textSelection, document, activeProfile, selectedModel]);
+
+  // Accept selection edit
+  const handleSelectionEditAccept = useCallback(() => {
+    if (!selectionEditResult || !document) return;
+
+    const cell = document.cells[selectionEditResult.cellIndex];
+    if (!cell) return;
+
+    // Apply the edit
+    const textBefore = cell.content.slice(0, selectionEditResult.startOffset);
+    const textAfter = cell.content.slice(selectionEditResult.endOffset);
+    const newContent = textBefore + selectionEditResult.editedText + textAfter;
+
+    setDocument(prev => {
+      if (!prev) return prev;
+      const updated = { ...prev };
+      updated.cells = prev.cells.map((c, i) => {
+        if (i === selectionEditResult.cellIndex) {
+          return { ...c, content: newContent };
+        }
+        return c;
+      });
+      return updated;
+    });
+
+    // Clear everything
+    setSelectionEditResult(null);
+    clearTextSelection();
+    window.getSelection()?.removeAllRanges();
+  }, [selectionEditResult, document, clearTextSelection]);
+
+  // Reject selection edit
+  const handleSelectionEditReject = useCallback(() => {
+    setSelectionEditResult(null);
+    clearTextSelection();
+    window.getSelection()?.removeAllRanges();
+  }, [clearTextSelection]);
+
+  // Refine selection edit
+  const handleSelectionEditRefine = useCallback(async (feedback: string) => {
+    if (!selectionEditResult || !document) return;
+
+    const cell = document.cells[selectionEditResult.cellIndex];
+    if (!cell) return;
+
+    setIsSelectionEditing(true);
+
+    try {
+      const res = await fetch('/api/document/edit-selection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          selectedText: selectionEditResult.originalText,
+          fullCellContent: cell.content,
+          startOffset: selectionEditResult.startOffset,
+          endOffset: selectionEditResult.endOffset,
+          instruction: `Previous edit: "${selectionEditResult.editedText}". User feedback: ${feedback}. Please revise the edit based on the feedback.`,
+          profileId: activeProfile,
+          model: selectedModel || undefined,
+        }),
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || 'Refine failed');
+      }
+
+      const data = await res.json();
+
+      // Update the result with the refined edit
+      setSelectionEditResult(prev => prev ? {
+        ...prev,
+        editedText: data.editedSelection,
+        instruction: feedback,
+      } : null);
+
+    } catch (error) {
+      console.error('Selection edit refine failed:', error);
+      showToast(error instanceof Error ? error.message : 'Refine failed', 'error');
+    } finally {
+      setIsSelectionEditing(false);
+    }
+  }, [selectionEditResult, document, activeProfile, selectedModel]);
 
   // Request edit with specific parameters (used by feedback panel Apply button)
   const handleRequestEditDirect = useCallback(async (cellIndices: number[], instruction: string) => {
@@ -829,7 +1246,7 @@ export default function EditorPage() {
       }
       console.error('Edit request failed:', error);
       const message = error instanceof Error ? error.message : 'Failed to get edit suggestion';
-      alert(`Edit failed: ${message}`);
+      showToast(`Edit failed: ${message}`, 'error');
     } finally {
       setIsLoading(false);
       abortControllerRef.current = null;
@@ -914,7 +1331,7 @@ export default function EditorPage() {
         return;
       }
       console.error('Edit error:', err);
-      alert('Failed to get edit suggestion');
+      showToast('Failed to get edit suggestion', 'error');
     } finally {
       setIsLoading(false);
       abortControllerRef.current = null;
@@ -1364,7 +1781,7 @@ export default function EditorPage() {
     } catch (error) {
       console.error('Refinement failed:', error);
       const message = error instanceof Error ? error.message : 'Failed to refine edit';
-      alert(`Refinement failed: ${message}`);
+      showToast(`Refinement failed: ${message}`, 'error');
     } finally {
       setIsRefining(false);
       setRefiningCellIndex(null);
@@ -1688,6 +2105,44 @@ export default function EditorPage() {
     setLastSelectedIndex(null);
   }, [document]);
 
+  // Move a cell up or down
+  const handleMoveCell = useCallback((index: number, direction: 'up' | 'down') => {
+    if (!document) return;
+
+    const newIndex = direction === 'up' ? index - 1 : index + 1;
+    if (newIndex < 0 || newIndex >= document.cells.length) return;
+
+    // Save snapshot before making the change
+    const snapshot = saveSnapshot(
+      document.id,
+      document.title,
+      document.cells.map((p) => ({ id: p.id, index: p.index, content: p.content })),
+      `Moved cell ${index + 1} ${direction}`
+    );
+
+    // Update history state
+    setHistory((h) => {
+      if (!h) return { documentId: document.id, snapshots: [snapshot], maxSnapshots: 50 };
+      return { ...h, snapshots: [snapshot, ...h.snapshots].slice(0, 50) };
+    });
+    setFutureStates([]); // Clear redo stack
+
+    setDocument((prev) => {
+      if (!prev) return null;
+      const newCells = [...prev.cells];
+      const [removed] = newCells.splice(index, 1);
+      newCells.splice(newIndex, 0, removed);
+      newCells.forEach((p, i) => { p.index = i; });
+      return { ...prev, cells: newCells };
+    });
+
+    // Update selection to follow the moved cell
+    if (selectedCells.has(index)) {
+      setSelectedCells(new Set([newIndex]));
+      setLastSelectedIndex(newIndex);
+    }
+  }, [document, selectedCells]);
+
   // Delete selected blocks
   const handleDeleteSelected = useCallback(() => {
     if (!document || selectedCells.size === 0) return;
@@ -1800,7 +2255,7 @@ export default function EditorPage() {
     );
 
     if (!isConsecutive) {
-      alert('Can only merge consecutive cells');
+      showToast('Can only merge consecutive cells', 'error');
       return;
     }
 
@@ -1951,6 +2406,205 @@ export default function EditorPage() {
   const canUndo = history && history.snapshots.length > 0 && (historyIndex === null || historyIndex < history.snapshots.length - 1);
   const canRedo = futureStates.length > 0;
 
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't handle shortcuts when in input/textarea/contenteditable
+      const target = e.target as HTMLElement;
+      const isEditing =
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable ||
+        editingCellIndex !== null;
+
+      const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+      const cmdOrCtrl = isMac ? e.metaKey : e.ctrlKey;
+
+      // Escape - Exit edit mode and clear selection
+      if (e.key === 'Escape') {
+        if (editingCellIndex !== null) {
+          setEditingCellIndex(null);
+          e.preventDefault();
+        } else if (selectedCells.size > 0) {
+          setSelectedCells(new Set());
+          setLastSelectedIndex(null);
+          e.preventDefault();
+        }
+        return;
+      }
+
+      // Allow these shortcuts even when not editing
+      // Ctrl/Cmd + Z - Undo
+      if (cmdOrCtrl && !e.shiftKey && e.key === 'z') {
+        if (history && history.snapshots.length > 0) {
+          e.preventDefault();
+          handleUndo();
+        }
+        return;
+      }
+
+      // Ctrl/Cmd + Shift + Z - Redo
+      if (cmdOrCtrl && e.shiftKey && e.key === 'z') {
+        if (futureStates.length > 0) {
+          e.preventDefault();
+          handleRedo();
+        }
+        return;
+      }
+
+      // Don't handle other shortcuts when editing text
+      if (isEditing) return;
+
+      // Delete/Backspace - Delete selected cells
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedCells.size > 0 && document) {
+        e.preventDefault();
+        handleDeleteSelected();
+        return;
+      }
+
+      // Enter - Edit selected cell (first one if multiple selected)
+      if (e.key === 'Enter' && selectedCells.size > 0 && document) {
+        e.preventDefault();
+        const selectedIndices = Array.from(selectedCells).sort((a, b) => a - b);
+        const firstSelected = selectedIndices[0];
+        if (firstSelected !== undefined && firstSelected < document.cells.length) {
+          setEditingCellIndex(firstSelected);
+          setEditingCellContent(document.cells[firstSelected].content);
+        }
+        return;
+      }
+
+      // Ctrl/Cmd + A - Select all cells
+      if (cmdOrCtrl && e.key === 'a' && document && document.cells.length > 0) {
+        e.preventDefault();
+        const allIndices = new Set(document.cells.map((_, i) => i));
+        setSelectedCells(allIndices);
+        setLastSelectedIndex(document.cells.length - 1);
+        return;
+      }
+
+      // Cmd/Ctrl + C - Copy selected cells
+      if (cmdOrCtrl && e.key === 'c' && selectedCells.size > 0 && document) {
+        e.preventDefault();
+        handleCopySelected();
+        return;
+      }
+
+      // Cmd/Ctrl + X - Cut selected cells (copy + delete)
+      if (cmdOrCtrl && e.key === 'x' && selectedCells.size > 0 && document) {
+        e.preventDefault();
+        handleCopySelected();
+        handleDeleteSelected();
+        return;
+      }
+
+      // Cmd/Ctrl + V - Paste cells from clipboard
+      if (cmdOrCtrl && e.key === 'v' && document) {
+        e.preventDefault();
+        navigator.clipboard.readText().then(text => {
+          if (!text.trim()) return;
+
+          // Split pasted text into cells by double newlines
+          const newCellContents = text.split(/\n\s*\n/).map(p => p.trim()).filter(p => p.length > 0);
+          if (newCellContents.length === 0) return;
+
+          // Find insertion point (after last selected cell, or at end)
+          const selectedIndices = Array.from(selectedCells).sort((a, b) => a - b);
+          const insertAfter = selectedIndices.length > 0
+            ? selectedIndices[selectedIndices.length - 1]
+            : document.cells.length - 1;
+
+          setDocument(prev => {
+            if (!prev) return null;
+            const newCells = [...prev.cells];
+            const insertPosition = insertAfter + 1;
+
+            const cellsToInsert: Cell[] = newCellContents.map((content, i) => ({
+              id: `cell-${Date.now()}-${i}`,
+              index: 0,
+              content,
+              type: 'cell' as const,
+            }));
+
+            newCells.splice(insertPosition, 0, ...cellsToInsert);
+            newCells.forEach((c, i) => { c.index = i; });
+
+            return { ...prev, cells: newCells };
+          });
+
+          // Select the newly pasted cells
+          const newSelection = new Set<number>();
+          for (let i = 0; i < newCellContents.length; i++) {
+            newSelection.add(insertAfter + 1 + i);
+          }
+          setSelectedCells(newSelection);
+          setLastSelectedIndex(insertAfter + newCellContents.length);
+        });
+        return;
+      }
+
+      // Arrow keys for navigation
+      if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && document && document.cells.length > 0) {
+        e.preventDefault();
+        const direction = e.key === 'ArrowUp' ? -1 : 1;
+
+        if (e.shiftKey && lastSelectedIndex !== null) {
+          // Shift + Arrow - Extend selection
+          const newIndex = Math.max(0, Math.min(document.cells.length - 1, lastSelectedIndex + direction));
+          setSelectedCells(prev => {
+            const newSelection = new Set(prev);
+            newSelection.add(newIndex);
+            return newSelection;
+          });
+          setLastSelectedIndex(newIndex);
+
+          // Scroll into view
+          setTimeout(() => {
+            const element = window.document.querySelector(`[data-para-index="${newIndex}"]`);
+            if (element) {
+              element.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+          }, 10);
+        } else if (selectedCells.size > 0) {
+          // Arrow - Move selection
+          const selectedIndices = Array.from(selectedCells).sort((a, b) => a - b);
+          const currentIndex = direction === -1 ? selectedIndices[0] : selectedIndices[selectedIndices.length - 1];
+          const newIndex = Math.max(0, Math.min(document.cells.length - 1, currentIndex + direction));
+          setSelectedCells(new Set([newIndex]));
+          setLastSelectedIndex(newIndex);
+
+          // Scroll into view
+          setTimeout(() => {
+            const element = window.document.querySelector(`[data-para-index="${newIndex}"]`);
+            if (element) {
+              element.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+          }, 10);
+        } else {
+          // No selection - start from top or bottom
+          const newIndex = direction === -1 ? document.cells.length - 1 : 0;
+          setSelectedCells(new Set([newIndex]));
+          setLastSelectedIndex(newIndex);
+        }
+        return;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [
+    document,
+    selectedCells,
+    lastSelectedIndex,
+    editingCellIndex,
+    history,
+    futureStates,
+    handleUndo,
+    handleRedo,
+    handleDeleteSelected,
+    handleCopySelected,
+  ]);
+
   // Generate content using AI
   const handleGenerateContent = useCallback(async () => {
     if (!generatePrompt.trim() || isGenerating) return;
@@ -2035,7 +2689,7 @@ export default function EditorPage() {
       setInsertAtIndex(null);
     } catch (err) {
       console.error('Generation error:', err);
-      alert('Failed to generate content');
+      showToast('Failed to generate content', 'error');
     } finally {
       setIsGenerating(false);
     }
@@ -2239,6 +2893,19 @@ export default function EditorPage() {
                   ✨
                 </button>
 
+                {/* Chat Assistant */}
+                <button
+                  onClick={() => setShowChatPanel(!showChatPanel)}
+                  className={`p-2 rounded-lg border ${
+                    showChatPanel
+                      ? 'border-[var(--primary)] bg-[var(--primary)]/10 text-[var(--primary)]'
+                      : 'border-[var(--border)] hover:bg-[var(--muted)]'
+                  }`}
+                  title="Chat Assistant"
+                >
+                  💬
+                </button>
+
                 {/* Doc Profile */}
                 <button
                   onClick={() => setShowDocProfile(!showDocProfile)}
@@ -2250,16 +2917,6 @@ export default function EditorPage() {
                   title="Document Profile"
                 >
                   📋
-                </button>
-
-                {/* Save/Export */}
-                <button
-                  onClick={handleExportDocument}
-                  disabled={isExporting}
-                  className="p-2 rounded-lg border border-[var(--border)] hover:bg-[var(--muted)] disabled:opacity-50"
-                  title="Save"
-                >
-                  💾
                 </button>
 
                 {/* History */}
@@ -2275,14 +2932,52 @@ export default function EditorPage() {
                   📜
                 </button>
 
-                {/* Close document */}
-                <button
-                  onClick={handleClearDocument}
-                  className="p-2 rounded-lg border border-red-200 text-red-500 hover:bg-red-50"
-                  title="Close document"
-                >
-                  ✕
-                </button>
+                {/* Export dropdown */}
+                <div className="relative" ref={exportMenuRef}>
+                  <button
+                    onClick={() => setShowExportMenu(!showExportMenu)}
+                    disabled={isExporting}
+                    className="p-2 rounded-lg border border-[var(--border)] hover:bg-[var(--muted)] disabled:opacity-50 flex items-center gap-1"
+                    title="Export"
+                  >
+                    💾
+                    <svg
+                      className={`w-3 h-3 text-[var(--muted-foreground)] transition-transform ${showExportMenu ? 'rotate-180' : ''}`}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+
+                  {showExportMenu && (
+                    <div className="absolute top-full right-0 mt-1 w-40 bg-[var(--background)] border border-[var(--border)] rounded-lg shadow-lg py-1 z-50">
+                      <button
+                        onClick={handleExportTxt}
+                        disabled={isExporting}
+                        className="w-full px-4 py-2 text-sm text-left text-[var(--foreground)] hover:bg-[var(--muted)] disabled:opacity-50 flex items-center gap-2"
+                      >
+                        📄 Text (.txt)
+                      </button>
+                      <button
+                        onClick={handleExportWord}
+                        disabled={isExporting}
+                        className="w-full px-4 py-2 text-sm text-left text-[var(--foreground)] hover:bg-[var(--muted)] disabled:opacity-50 flex items-center gap-2"
+                      >
+                        📘 Word (.docx)
+                      </button>
+                      <button
+                        onClick={handleExportPdf}
+                        disabled={isExporting}
+                        className="w-full px-4 py-2 text-sm text-left text-[var(--foreground)] hover:bg-[var(--muted)] disabled:opacity-50 flex items-center gap-2"
+                      >
+                        📕 PDF (.pdf)
+                      </button>
+                    </div>
+                  )}
+                </div>
+
               </>
             )}
 
@@ -2346,7 +3041,7 @@ export default function EditorPage() {
                 </div>
               ) : (
                 <div className="divide-y divide-[var(--border)]">
-                  {savedDocuments.filter(doc => doc.id).map((doc, idx) => (
+                  {savedDocuments.filter(doc => doc.id).map((doc, idx, arr) => (
                     <div key={doc.id || `doc-${idx}`} onClick={() => handleLoadDocument(doc.id)} className={`p-3 cursor-pointer hover:bg-[var(--muted)] transition-colors group ${document?.id === doc.id ? 'bg-[var(--primary)]/10 border-l-2 border-[var(--primary)]' : ''}`}>
                       <div className="flex items-start justify-between">
                         <div className="flex-1 min-w-0">
@@ -2358,9 +3053,27 @@ export default function EditorPage() {
                             {formatTimestamp(doc.updatedAt)}
                           </p>
                         </div>
+                        <div className="flex flex-col opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={(e) => handleReorderDocument(doc.id, 'up', e)}
+                            disabled={idx === 0}
+                            className={`p-0.5 text-xs rounded ${idx === 0 ? 'text-[var(--muted-foreground)]/30 cursor-not-allowed' : 'text-[var(--muted-foreground)] hover:bg-[var(--muted)]'}`}
+                            title="Move up"
+                          >
+                            ▲
+                          </button>
+                          <button
+                            onClick={(e) => handleReorderDocument(doc.id, 'down', e)}
+                            disabled={idx === arr.length - 1}
+                            className={`p-0.5 text-xs rounded ${idx === arr.length - 1 ? 'text-[var(--muted-foreground)]/30 cursor-not-allowed' : 'text-[var(--muted-foreground)] hover:bg-[var(--muted)]'}`}
+                            title="Move down"
+                          >
+                            ▼
+                          </button>
+                        </div>
                         <button
                           onClick={(e) => handleDeleteSavedDocument(doc.id, e)}
-                          className="opacity-0 group-hover:opacity-100 p-1 text-xs text-red-600 hover:bg-red-50 rounded transition-opacity"
+                          className="opacity-0 group-hover:opacity-100 p-1 text-xs text-red-600 hover:bg-red-50 rounded transition-opacity ml-1"
                           title="Delete document"
                         >
                           ×
@@ -2386,7 +3099,20 @@ export default function EditorPage() {
         )}
 
         {/* Document upload / display */}
-        <main className="flex-1 overflow-y-auto p-6 relative">
+        <main
+          className="flex-1 overflow-y-auto p-6 relative"
+          onClick={(e) => {
+            // Clear selection when clicking on background (not on a cell)
+            const target = e.target as HTMLElement;
+            const clickedOnCell = target.closest('[data-para-index]');
+            const clickedOnButton = target.closest('button');
+            const clickedOnInput = target.closest('input, textarea');
+            if (!clickedOnCell && !clickedOnButton && !clickedOnInput && selectedCells.size > 0) {
+              setSelectedCells(new Set());
+              setLastSelectedIndex(null);
+            }
+          }}
+        >
           {!document ? (
             <div className="max-w-2xl mx-auto">
               <div className="border-2 border-dashed border-[var(--border)] rounded-lg p-12 text-center">
@@ -2527,6 +3253,7 @@ export default function EditorPage() {
                 </div>
               )}
 
+              <div data-cell-container>
               {document.cells.map((para, index) => {
                 const isSearchMatch = searchResults.includes(index);
                 const isCurrentSearchMatch = searchResults[currentSearchIndex] === index;
@@ -2551,23 +3278,54 @@ export default function EditorPage() {
                           : ''
                       }`}
                     >
-                      {/* Paragraph number and delete button */}
-                      <div className="absolute -left-10 top-2 flex items-center gap-1">
+                      {/* Paragraph number on left */}
+                      <div className="absolute -left-10 top-2 flex items-center">
+                        <span className="text-xs text-[var(--muted-foreground)] w-6 text-right">
+                          {index + 1}
+                        </span>
+                      </div>
+
+                      {/* Cell toolbar on top right - move up/down and delete */}
+                      <div className="absolute -top-3 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 bg-[var(--background)] border border-[var(--border)] rounded-md shadow-sm px-1 py-0.5">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleMoveCell(index, 'up');
+                          }}
+                          disabled={index === 0}
+                          className="p-1 hover:bg-[var(--muted)] rounded disabled:opacity-30 disabled:cursor-not-allowed"
+                          title="Move up"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                          </svg>
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleMoveCell(index, 'down');
+                          }}
+                          disabled={index === document.cells.length - 1}
+                          className="p-1 hover:bg-[var(--muted)] rounded disabled:opacity-30 disabled:cursor-not-allowed"
+                          title="Move down"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </button>
+                        <div className="w-px h-4 bg-[var(--border)] mx-0.5" />
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             handleDeleteBlock(index);
                           }}
-                          className="opacity-0 group-hover:opacity-100 p-0.5 text-red-500 hover:bg-red-50 rounded transition-opacity"
-                          title="Delete block"
+                          className="p-1 hover:bg-[var(--muted)] rounded"
+                          title="Delete cell"
                         >
                           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                           </svg>
                         </button>
-                        <span className="text-xs text-[var(--muted-foreground)] w-4 text-right">
-                          {index + 1}
-                        </span>
                       </div>
 
                       {/* Show diff if edited, batch edit status, direct edit mode, or normal content */}
@@ -2762,6 +3520,7 @@ export default function EditorPage() {
                         </div>
                       ) : (
                         <div
+                          data-cell-index={index}
                           onClick={(e) => handleCellClick(index, e)}
                           onDoubleClick={() => {
                             setEditingCellIndex(index);
@@ -2777,7 +3536,15 @@ export default function EditorPage() {
                           }`}
                           title="Click to select, Shift+click for range, Cmd/Ctrl+click to add. Double-click to edit directly."
                         >
-                          {para.type === 'heading' ? (
+                          {/* Render with inline diff if there's a pending selection edit for this cell */}
+                          {selectionEditResult && selectionEditResult.cellIndex === index ? (
+                            <div className={`leading-relaxed ${para.type === 'heading' ? 'text-lg font-semibold' : ''}`}>
+                              <span>{para.content.slice(0, selectionEditResult.startOffset)}</span>
+                              <span className="bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 line-through">{selectionEditResult.originalText}</span>
+                              <span className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">{selectionEditResult.editedText}</span>
+                              <span>{para.content.slice(selectionEditResult.endOffset)}</span>
+                            </div>
+                          ) : para.type === 'heading' ? (
                             <h3 className="text-lg font-semibold text-[var(--foreground)]">
                               <SyntaxHighlighter content={para.content} mode={editorMode} />
                             </h3>
@@ -2836,6 +3603,7 @@ export default function EditorPage() {
                   </div>
                 );
               })}
+              </div>
 
               {/* AI Generate button at bottom */}
               {document.cells.length > 0 && (
@@ -3245,7 +4013,7 @@ export default function EditorPage() {
                                   onClick={handleCleanup}
                                   disabled={isCleaningUp}
                                   className="flex-1 py-1.5 text-xs border border-[var(--border)] rounded-lg hover:bg-[var(--muted)] disabled:opacity-50 flex items-center justify-center gap-1.5"
-                                  title="AI-powered cleanup: format, split, and merge intelligently"
+                                  title="Prettify: merge fragments, remove artifacts, clean up PDF imports"
                                 >
                                   {isCleaningUp ? (
                                     <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -3257,7 +4025,7 @@ export default function EditorPage() {
                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
                                     </svg>
                                   )}
-                                  {isCleaningUp ? 'Cleaning...' : 'Clean'}
+                                  {isCleaningUp ? 'Prettifying...' : 'Prettify'}
                                 </button>
                               </div>
                             </div>
@@ -3300,6 +4068,19 @@ export default function EditorPage() {
               onClose={() => setShowDocProfile(false)}
             />
           </aside>
+        )}
+
+        {/* Chat Assistant Panel */}
+        {document && showChatPanel && (
+          <ChatPanel
+            isOpen={showChatPanel}
+            onClose={() => setShowChatPanel(false)}
+            documentId={document.id}
+            profile={profiles.find(p => p.id === activeProfile) || null}
+            selectedCellsContent={Array.from(selectedCells).sort((a, b) => a - b).map(i => document.cells[i]?.content || '').filter(Boolean)}
+            selectedCellIndices={Array.from(selectedCells).sort((a, b) => a - b)}
+            documentTitle={document.title}
+          />
         )}
       </div>
 
@@ -3541,6 +4322,31 @@ export default function EditorPage() {
           </div>
         </div>
       )}
+
+      {/* Selection Edit Popover - for targeted text editing */}
+      {(textSelection || selectionEditResult) && document && (
+        <SelectionEditPopover
+          selectedText={selectionEditResult?.originalText || textSelection?.text || ''}
+          selectionRect={textSelection?.rect || null}
+          onSubmit={handleSelectionEdit}
+          onAccept={handleSelectionEditAccept}
+          onReject={handleSelectionEditReject}
+          onRefine={handleSelectionEditRefine}
+          onCancel={() => {
+            setSelectionEditResult(null);
+            clearTextSelection();
+          }}
+          isLoading={isSelectionEditing}
+          editResult={selectionEditResult ? {
+            originalText: selectionEditResult.originalText,
+            editedText: selectionEditResult.editedText,
+            instruction: selectionEditResult.instruction,
+          } : null}
+        />
+      )}
+
+      {/* Toast notifications */}
+      <ToastContainer />
     </div>
   );
 }

@@ -128,7 +128,7 @@ export default function SettingsPage() {
   const [newOpenaiKey, setNewOpenaiKey] = useState('');
   const [newOllamaUrl, setNewOllamaUrl] = useState('');
   const [savingConfig, setSavingConfig] = useState(false);
-  const [showApiConfig, setShowApiConfig] = useState(false);
+  const [showApiConfig, setShowApiConfig] = useState(true);
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
 
   useEffect(() => {
@@ -541,19 +541,57 @@ export default function SettingsPage() {
             {/* AI Model */}
             <div>
               <label className="block text-sm font-medium mb-2">AI Model</label>
-              <select
-                value={selectedModel}
-                onChange={(e) => handleModelChange(e.target.value)}
-                className="w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)]"
-              >
-                {availableModels.map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))}
-              </select>
+              <div className="flex gap-2">
+                <select
+                  value={availableModels.includes(selectedModel) ? selectedModel : '_custom'}
+                  onChange={(e) => {
+                    if (e.target.value !== '_custom') {
+                      handleModelChange(e.target.value);
+                    }
+                  }}
+                  className="flex-1 px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)]"
+                >
+                  {appConfig?.hasAnthropicKey && (
+                    <optgroup label="Anthropic">
+                      {(appConfig as any)?.allModels?.anthropic?.map((m: string) => (
+                        <option key={m} value={m}>{m}</option>
+                      )) || availableModels.filter(m => m.includes('claude')).map((m) => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {appConfig?.hasOpenaiKey && (
+                    <optgroup label="OpenAI">
+                      {(appConfig as any)?.allModels?.openai?.map((m: string) => (
+                        <option key={m} value={m}>{m}</option>
+                      )) || availableModels.filter(m => m.includes('gpt') || m.includes('o1') || m.includes('o3')).map((m) => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {appConfig?.hasOllamaUrl && (
+                    <optgroup label="Ollama (Local)">
+                      {(appConfig as any)?.allModels?.ollama?.map((m: string) => (
+                        <option key={m} value={m}>{m}</option>
+                      )) || ['llama3.2', 'mistral', 'mixtral'].map((m) => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </optgroup>
+                  )}
+                  <option value="_custom">Custom model...</option>
+                </select>
+              </div>
+              {!availableModels.includes(selectedModel) && (
+                <input
+                  type="text"
+                  value={selectedModel}
+                  onChange={(e) => handleModelChange(e.target.value)}
+                  placeholder="Enter custom model name"
+                  className="mt-2 w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm"
+                />
+              )}
               <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-                Select the AI model used for generating edit suggestions.
+                Select a model or enter a custom model name for newer models.
               </p>
             </div>
 

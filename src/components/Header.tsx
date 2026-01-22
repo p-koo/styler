@@ -5,7 +5,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 
 interface HeaderProps {
-  currentPage?: 'home' | 'editor' | 'settings' | 'about';
+  currentPage?: 'home' | 'editor' | 'settings' | 'about' | 'guide';
 }
 
 export default function Header({ currentPage }: HeaderProps) {
@@ -26,6 +26,7 @@ export default function Header({ currentPage }: HeaderProps) {
   const navItems = [
     { href: '/', label: 'Home', page: 'home' as const },
     { href: '/editor', label: 'Editor', page: 'editor' as const },
+    { href: '/guide', label: 'Guide', page: 'guide' as const },
     { href: '/settings', label: 'Settings', page: 'settings' as const },
     { href: '/about', label: 'About', page: 'about' as const },
   ];

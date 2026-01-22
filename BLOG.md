@@ -98,6 +98,83 @@ Fine-grained sliders that modify the base + profile:
 
 When generating an edit, all three layers merge. The Prompt Agent computes effective values and builds a prompt that reflects your complete preference stack.
 
+### Example: How a Prompt Gets Built
+
+Let's walk through a concrete example. Say you have these preferences configured:
+
+**Base Style:**
+```typescript
+{
+  verbosity: 'terse',
+  formalityLevel: 4,  // High formality
+  hedgingStyle: 'cautious',
+  formatBans: ['emoji'],
+  learnedRules: [
+    { rule: "Prefer active voice", confidence: 0.85 }
+  ]
+}
+```
+
+**Active Audience Profile:** "Academic Journal"
+```typescript
+{
+  jargonLevel: 'heavy',
+  emphasisPoints: ['methodology', 'reproducibility'],
+  lengthGuidance: { target: 'comprehensive' }
+}
+```
+
+**Document Adjustments:** (for this specific paper)
+```typescript
+{
+  hedgingAdjust: +1.0,  // Even more cautious than usual
+  additionalAvoidWords: ['breakthrough', 'novel']
+}
+```
+
+The Prompt Agent merges these and generates this system prompt:
+
+```
+You are a writing assistant that adapts to the user's personal writing style and preferences.
+
+VERBOSITY: EXTREME COMPRESSION MODE - YOUR #1 PRIORITY IS CUTTING WORDS
+TARGET: Remove 30-50% of words. If you only cut 10-20%, you have FAILED.
+MANDATORY CUTS - DO ALL OF THESE:
+1. DELETE these words EVERYWHERE: "that", "very", "really", "just"...
+2. DELETE all weak openings: "It is important to note"...
+[...]
+
+FORMALITY: MAXIMUM FORMAL/ACADEMIC MODE - STRICT REQUIREMENT
+- Use formal, academic language throughout. This is non-negotiable.
+- NEVER use contractions. Replace: don't→do not, isn't→is not...
+- Use third person. Avoid "I", "we", "you". Use "one", "the authors"...
+
+HEDGING: CAUTIOUS MODE
+- Use appropriate hedging language throughout.
+- ADD qualifiers: "may", "might", "suggests", "appears to"...
+- Acknowledge uncertainty and limitations explicitly.
+
+FORMATTING: Never use: emojis.
+
+SPECIFIC PREFERENCES:
+- Prefer active voice
+
+AUDIENCE CONTEXT: Academic Journal
+Use appropriate technical terminology freely. Assume audience expertise.
+Emphasize: methodology, reproducibility.
+Provide comprehensive detail where appropriate.
+```
+
+This prompt goes to the LLM along with the text to edit. The combined effect:
+- **Terse verbosity** aggressively cuts filler words
+- **High formality** ensures academic register
+- **Cautious hedging** adds appropriate qualifiers
+- **No emojis** enforced by format rules
+- **Active voice** from learned rules
+- **Heavy jargon** allowed by audience profile
+
+The result is an edit that sounds like *your* academic writing—compressed but hedged appropriately, formal but using terms your field expects.
+
 ## Learning From Feedback
 
 The magic happens when you accept or reject edits. We learn from three signals:
@@ -253,6 +330,45 @@ Building Styler taught us a few things about AI writing assistants:
 **4. Style sliders should be user-controlled.** We tried having the system auto-adjust verbosity/formality based on feedback. Users hated it—their settings kept drifting. Now sliders are user-controlled only.
 
 **5. Intent matters more than style.** Preserving what a paragraph is *trying to do* is more important than matching surface-level style patterns. The Intent Agent was a late addition but made the biggest quality difference.
+
+## Recent Additions
+
+### Chat Assistant
+
+We added an interactive chat panel that integrates with your document and preferences:
+
+- **General Chat**: Ask writing questions, get advice based on your configured style
+- **Document Chat**: Select cells and get feedback on them specifically
+- **Alignment Score**: Check how well your content matches your preference profile
+
+The chat uses the same preference context as the editor, so advice is tailored to your style.
+
+### Keyboard Shortcuts
+
+Power users wanted faster navigation. We added a full set of shortcuts:
+
+| Shortcut | Action |
+|----------|--------|
+| `↑` / `↓` | Navigate cells |
+| `Shift + ↑/↓` | Extend selection |
+| `Enter` | Edit selected cell |
+| `Delete` | Delete selected cells |
+| `Cmd/Ctrl + C/X/V` | Copy/Cut/Paste |
+| `Cmd/Ctrl + Z` | Undo/Redo |
+
+### Cell Controls
+
+Colab-style toolbar on each cell: move up, move down, delete. Appears on hover, stays out of the way otherwise.
+
+### Prettify
+
+PDF imports are messy—page numbers, broken lines, artifacts everywhere. The "Prettify" function (formerly "Clean") uses AI to:
+- Merge fragmented sentences into proper paragraphs
+- Remove page numbers and PDF artifacts
+- Fix broken words split across lines
+- Group LaTeX packages compactly
+
+It's aggressive by design—cleaning up noise, not preserving it.
 
 ## Try It Yourself
 

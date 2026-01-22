@@ -208,6 +208,14 @@ You select text → Intent analysis → Generate edit → Critique → Refine �
 - **Word-level diffs** — Toggle individual changes before accepting
 - **Iterative refinement** — Not satisfied? Add feedback, click Refine, get a better edit
 - **Quick feedback chips** — One-click feedback: "Too clunky", "Lost intent", "Too many edits"
+- **Cell controls** — Move cells up/down, delete with toolbar buttons (Colab-style)
+- **Prettify** — AI-powered cleanup for PDF imports: merge fragments, remove artifacts, fix formatting
+
+### Chat Assistant
+
+- **General Chat** — Ask questions about writing, get advice based on your document profile
+- **Document Chat** — Get feedback on selected cells, analyze alignment with your style
+- **Alignment Score** — See how well your content matches your configured preferences
 
 ### Style Controls
 
@@ -228,6 +236,22 @@ You select text → Intent analysis → Generate edit → Critique → Refine �
 - **LaTeX** — Preserves commands, environments, math mode
 - **Markdown** — Maintains headers, lists, code blocks
 - **Smart splitting** — Syntax-aware document segmentation
+
+### Keyboard Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `Delete` / `Backspace` | Delete selected cells |
+| `Enter` | Edit selected cell |
+| `Escape` | Exit edit mode / clear selection |
+| `↑` / `↓` | Navigate between cells |
+| `Shift + ↑/↓` | Extend selection |
+| `Cmd/Ctrl + A` | Select all cells |
+| `Cmd/Ctrl + C` | Copy selected cells |
+| `Cmd/Ctrl + X` | Cut selected cells |
+| `Cmd/Ctrl + V` | Paste cells |
+| `Cmd/Ctrl + Z` | Undo |
+| `Cmd/Ctrl + Shift + Z` | Redo |
 
 ### Quality of Life
 
@@ -289,6 +313,7 @@ src/
 ├── components/
 │   ├── DiffView.tsx           # Interactive diff display
 │   ├── DocumentProfilePanel.tsx  # Per-document preferences
+│   ├── ChatPanel.tsx          # Chat assistant sidebar
 │   └── ...
 ├── memory/                    # Preference storage
 │   ├── preference-store.ts    # Global preferences

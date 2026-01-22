@@ -174,6 +174,14 @@ export default function AboutPage() {
                 <h3 className="font-semibold text-teal-800 dark:text-teal-300 mb-1">Document Goals</h3>
                 <p className="text-sm text-teal-700/80 dark:text-teal-300/70">Auto-synthesized objectives guide edits. Lock to prevent drift.</p>
               </div>
+              <div className="p-4 bg-white/50 dark:bg-black/20 rounded-lg">
+                <h3 className="font-semibold text-teal-800 dark:text-teal-300 mb-1">Cell Controls</h3>
+                <p className="text-sm text-teal-700/80 dark:text-teal-300/70">Move cells up/down, delete with toolbar. Full keyboard shortcuts.</p>
+              </div>
+              <div className="p-4 bg-white/50 dark:bg-black/20 rounded-lg">
+                <h3 className="font-semibold text-teal-800 dark:text-teal-300 mb-1">Chat Assistant</h3>
+                <p className="text-sm text-teal-700/80 dark:text-teal-300/70">Get feedback on selections, check alignment scores, ask questions.</p>
+              </div>
             </div>
           </div>
         </section>

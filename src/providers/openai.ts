@@ -111,7 +111,7 @@ export class OpenAIProvider extends LLMProvider {
   async listModels(): Promise<string[]> {
     const response = await this.client.models.list();
     return response.data
-      .filter((m) => m.id.includes('gpt'))
+      .filter((m) => m.id.includes('gpt') || m.id.startsWith('o1') || m.id.startsWith('o3'))
       .map((m) => m.id)
       .sort();
   }

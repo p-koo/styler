@@ -208,6 +208,7 @@ export default function SettingsPage() {
       }
 
       await fetchConfig();
+      await fetchModels(); // Refresh available models after API key change
       setMessage({ type: 'success', text: 'Configuration saved' });
 
       // Clear input fields after successful save
@@ -541,57 +542,44 @@ export default function SettingsPage() {
             {/* AI Model */}
             <div>
               <label className="block text-sm font-medium mb-2">AI Model</label>
-              <div className="flex gap-2">
-                <select
-                  value={availableModels.includes(selectedModel) ? selectedModel : '_custom'}
-                  onChange={(e) => {
-                    if (e.target.value !== '_custom') {
-                      handleModelChange(e.target.value);
-                    }
-                  }}
-                  className="flex-1 px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)]"
-                >
-                  {appConfig?.hasAnthropicKey && (
-                    <optgroup label="Anthropic">
-                      {(appConfig as any)?.allModels?.anthropic?.map((m: string) => (
-                        <option key={m} value={m}>{m}</option>
-                      )) || availableModels.filter(m => m.includes('claude')).map((m) => (
-                        <option key={m} value={m}>{m}</option>
-                      ))}
-                    </optgroup>
-                  )}
-                  {appConfig?.hasOpenaiKey && (
-                    <optgroup label="OpenAI">
-                      {(appConfig as any)?.allModels?.openai?.map((m: string) => (
-                        <option key={m} value={m}>{m}</option>
-                      )) || availableModels.filter(m => m.includes('gpt') || m.includes('o1') || m.includes('o3')).map((m) => (
-                        <option key={m} value={m}>{m}</option>
-                      ))}
-                    </optgroup>
-                  )}
-                  {appConfig?.hasOllamaUrl && (
-                    <optgroup label="Ollama (Local)">
-                      {(appConfig as any)?.allModels?.ollama?.map((m: string) => (
-                        <option key={m} value={m}>{m}</option>
-                      )) || ['llama3.2', 'mistral', 'mixtral'].map((m) => (
-                        <option key={m} value={m}>{m}</option>
-                      ))}
-                    </optgroup>
-                  )}
-                  <option value="_custom">Custom model...</option>
-                </select>
-              </div>
-              {!availableModels.includes(selectedModel) && (
-                <input
-                  type="text"
-                  value={selectedModel}
-                  onChange={(e) => handleModelChange(e.target.value)}
-                  placeholder="Enter custom model name"
-                  className="mt-2 w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm"
-                />
-              )}
+              <input
+                type="text"
+                list="model-suggestions"
+                value={selectedModel}
+                onChange={(e) => handleModelChange(e.target.value)}
+                placeholder="Enter model name (e.g., claude-sonnet-4-20250514)"
+                className="w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)]"
+              />
+              <datalist id="model-suggestions">
+                {appConfig?.hasAnthropicKey && (
+                  <>
+                    <option value="claude-sonnet-4-20250514" />
+                    <option value="claude-opus-4-20250514" />
+                    <option value="claude-3-5-sonnet-20241022" />
+                    <option value="claude-3-5-haiku-20241022" />
+                  </>
+                )}
+                {appConfig?.hasOpenaiKey && (
+                  <>
+                    <option value="gpt-5.2" />
+                    <option value="gpt-5.1" />
+                    <option value="gpt-4o" />
+                    <option value="gpt-4o-mini" />
+                    <option value="o3-mini" />
+                    <option value="o1" />
+                    <option value="o1-mini" />
+                  </>
+                )}
+                {appConfig?.hasOllamaUrl && (
+                  <>
+                    <option value="llama3.2" />
+                    <option value="mistral" />
+                    <option value="mixtral" />
+                  </>
+                )}
+              </datalist>
               <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-                Select a model or enter a custom model name for newer models.
+                Type any model name or select from suggestions.
               </p>
             </div>
 
@@ -781,16 +769,18 @@ export default function SettingsPage() {
       <section className="mb-8 p-6 border border-[var(--border)] rounded-lg">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-medium">Base Style</h2>
-          <button
-            onClick={() => {
-              const prompt = generatePromptForProfile(store.baseStyle);
-              navigator.clipboard.writeText(prompt);
-              setMessage({ type: 'success', text: 'Base style copied to clipboard!' });
-            }}
-            className="px-3 py-1 text-sm border border-[var(--border)] rounded hover:bg-[var(--muted)]"
-          >
-            Copy for ChatGPT
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => {
+                const prompt = generatePromptForProfile(store.baseStyle);
+                navigator.clipboard.writeText(prompt);
+                setMessage({ type: 'success', text: 'Base style copied to clipboard!' });
+              }}
+              className="px-3 py-1 text-sm border border-[var(--border)] rounded hover:bg-[var(--muted)]"
+            >
+              Copy for ChatGPT
+            </button>
+          </div>
         </div>
         <p className="text-[var(--muted-foreground)] text-sm mb-4">
           These preferences apply to all conversations regardless of audience profile.

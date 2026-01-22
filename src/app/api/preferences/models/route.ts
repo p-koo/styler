@@ -30,10 +30,12 @@ export async function GET() {
       ];
     } else if (config.type === 'openai') {
       fallbackModels = [
+        'gpt-5.1',
         'gpt-4o',
         'gpt-4o-mini',
-        'gpt-4-turbo',
-        'gpt-3.5-turbo',
+        'o1',
+        'o1-mini',
+        'o3-mini',
       ];
     } else {
       fallbackModels = ['llama3.2', 'llama3.1', 'mistral'];

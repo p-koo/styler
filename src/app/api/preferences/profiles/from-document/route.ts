@@ -48,6 +48,7 @@ export async function POST(request: NextRequest) {
     const file = formData.get('file') as File | null;
     const name = formData.get('name') as string;
     const description = formData.get('description') as string;
+    const model = formData.get('model') as string | null;
 
     if (!file) {
       return NextResponse.json(
@@ -123,7 +124,7 @@ export async function POST(request: NextRequest) {
     };
 
     try {
-      const providerConfig = getDefaultProviderConfig();
+      const providerConfig = getDefaultProviderConfig(model || undefined);
       const provider = await createProvider(providerConfig);
 
       const result = await provider.complete({

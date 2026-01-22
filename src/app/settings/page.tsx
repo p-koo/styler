@@ -362,6 +362,7 @@ export default function SettingsPage() {
           formData.append('file', uploadedFile);
           formData.append('name', newProfileName);
           formData.append('description', newProfileDescription);
+          formData.append('model', selectedModel);
 
           const res = await fetch('/api/preferences/profiles/from-document', {
             method: 'POST',
@@ -388,6 +389,7 @@ export default function SettingsPage() {
               name: newProfileName,
               description: newProfileDescription,
               sampleText: documentText,
+              model: selectedModel,
             }),
           });
 

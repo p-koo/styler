@@ -21,6 +21,15 @@ export async function POST(request: NextRequest, context: RouteContext) {
   try {
     const { id } = await context.params;
 
+    // Parse request body for model
+    let model: string | undefined;
+    try {
+      const body = await request.json();
+      model = body.model;
+    } catch {
+      // No body or invalid JSON is fine
+    }
+
     // Load the document
     const filePath = path.join(DOCUMENTS_DIR, `${id}.json`);
     let documentContent = '';
@@ -61,6 +70,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       documentContent,
       documentType: documentType || undefined,
       existingGoals,
+      model,
     });
 
     // Save to preferences

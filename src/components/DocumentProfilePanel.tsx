@@ -63,6 +63,15 @@ export default function DocumentProfilePanel({
   const [analyzingGoals, setAnalyzingGoals] = useState(false);
   const [expandedGoalField, setExpandedGoalField] = useState<string | null>(null);
 
+  // Model selection from localStorage
+  const [selectedModel, setSelectedModel] = useState<string>('');
+
+  // Load model from localStorage on mount
+  useEffect(() => {
+    const storedModel = localStorage.getItem('preference-editor-model');
+    if (storedModel) setSelectedModel(storedModel);
+  }, []);
+
   // For import constraints
   const [importText, setImportText] = useState('');
   const [importing, setImporting] = useState(false);
@@ -203,6 +212,7 @@ export default function DocumentProfilePanel({
         body: JSON.stringify({
           guidance: adjustments.additionalFramingGuidance,
           rules: adjustments.learnedRules.map(r => r.rule),
+          model: selectedModel,
         }),
       });
 
@@ -285,6 +295,7 @@ export default function DocumentProfilePanel({
         body: JSON.stringify({
           text: importText,
           merge: !preview,
+          model: selectedModel,
         }),
       });
       const data = await res.json();
@@ -327,6 +338,7 @@ export default function DocumentProfilePanel({
       const res = await fetch(`/api/documents/${documentId}/goals`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: selectedModel }),
       });
       const data = await res.json();
 

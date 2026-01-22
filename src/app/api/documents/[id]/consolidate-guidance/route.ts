@@ -12,9 +12,10 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { guidance, rules } = await request.json() as {
+    const { guidance, rules, model } = await request.json() as {
       guidance: string[];
       rules?: string[];
+      model?: string;
     };
 
     if (!guidance || guidance.length < 2) {
@@ -24,7 +25,7 @@ export async function POST(
       );
     }
 
-    const provider = await createProvider(getDefaultProviderConfig());
+    const provider = await createProvider(getDefaultProviderConfig(model));
 
     const prompt = `You are helping consolidate a list of writing guidance/constraints into fewer, clearer directives.
 

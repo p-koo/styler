@@ -168,10 +168,10 @@ You select text → Intent analysis → Generate edit → Critique → Refine �
 1. **Intent Agent** analyzes what the paragraph is trying to accomplish
 2. **Prompt Agent** builds a context-aware prompt with your style preferences
 3. **LLM** generates an edit aligned with your voice
-4. **Critique Agent** scores alignment (0-1) and identifies issues
+4. **Critique + Learning Agent** scores alignment (0-1) and identifies issues
 5. If score < 0.8, the system refines automatically (up to 3 times)
 6. You review the diff, toggle individual changes, and accept or reject
-7. **Learning Agent** updates your preferences based on your decision
+7. The same **Critique + Learning Agent** updates your preferences based on your decision
 
 ### Three-Layer Preferences
 
@@ -188,8 +188,7 @@ You select text → Intent analysis → Generate edit → Critique → Refine �
 | **Orchestrator** | Coordinates the edit-critique-refine loop |
 | **Intent** | Analyzes document goals and paragraph purpose |
 | **Prompt** | Builds style-aware, context-rich prompts |
-| **Critique** | Evaluates edit quality, triggers refinement |
-| **Learning** | Updates preferences from your feedback |
+| **Critique + Learning** | Dual-role: evaluates edit quality AND learns from your accept/reject decisions |
 
 > **Deep Dive:** See the [Whitepaper](WHITEPAPER.md) for full architecture details or the [Technical Blog](BLOG.md) for a developer-focused walkthrough.
 
@@ -303,7 +302,7 @@ src/
 ├── agents/                    # ADAPT multi-agent system
 │   ├── orchestrator-agent.ts  # Main coordination loop
 │   ├── intent-agent.ts        # Document goals & paragraph intent
-│   ├── critique-agent.ts      # Edit evaluation & learning
+│   ├── critique-agent.ts      # Edit evaluation + learning (dual-role)
 │   ├── prompt-agent.ts        # Style-aware prompt building
 │   └── constraint-extraction-agent.ts
 ├── app/

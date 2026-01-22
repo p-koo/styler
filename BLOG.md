@@ -36,17 +36,17 @@ The key insight: instead of sending text directly to an LLM with a generic "impr
                       │
        ┌──────────────┼──────────────┐
        ▼              ▼              ▼
-   ┌────────┐    ┌────────┐    ┌────────┐
-   │ INTENT │    │ PROMPT │    │CRITIQUE│
-   │ AGENT  │    │ AGENT  │    │ AGENT  │
-   └────────┘    └────────┘    └────────┘
+   ┌────────┐    ┌────────┐    ┌────────────┐
+   │ INTENT │    │ PROMPT │    │ CRITIQUE + │
+   │ AGENT  │    │ AGENT  │    │  LEARNING  │
+   └────────┘    └────────┘    └────────────┘
 ```
 
 **Intent Agent**: Before editing anything, this agent analyzes what each paragraph is trying to accomplish. Is it introducing a concept? Providing evidence? Making a transition? This intent is preserved during editing.
 
 **Prompt Agent**: Builds context-aware prompts by combining your style preferences, document goals, section context, and learned rules. Different prompts for LaTeX vs. Markdown vs. plain text.
 
-**Critique Agent**: Evaluates every generated edit on a 0-1 alignment scale. If the score is below 0.8, it identifies specific issues and triggers re-generation. This creates a quality gate before anything reaches the user.
+**Critique + Learning Agent**: A dual-role agent that both evaluates edits and learns from user decisions. For evaluation, it scores every generated edit on a 0-1 alignment scale—if the score is below 0.8, it identifies specific issues and triggers re-generation. For learning, it analyzes accept/reject decisions to extract style adjustments, patterns, and rules that improve future edits.
 
 **Orchestrator**: Coordinates the whole loop. Calls Intent Agent first, builds the prompt, generates an edit, runs critique, and iterates up to 3 times until quality threshold is met.
 
@@ -376,7 +376,7 @@ Styler is open source. The core agents are in `src/agents/`:
 - `orchestrator-agent.ts` - Main coordination loop
 - `intent-agent.ts` - Document/paragraph analysis
 - `prompt-agent.ts` - Context-aware prompt building
-- `critique-agent.ts` - Edit evaluation and learning
+- `critique-agent.ts` - Edit evaluation + learning from feedback (dual-role)
 
 The preference system lives in `src/memory/`:
 - `preference-store.ts` - Global preferences

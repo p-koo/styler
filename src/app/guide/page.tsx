@@ -580,7 +580,7 @@ function WhitepaperSection() {
           <li><strong>Orchestrator Agent</strong>: Central coordinator managing the edit-critique-refine loop</li>
           <li><strong>Intent Agent</strong>: Analyzes document goals and paragraph purpose before editing</li>
           <li><strong>Prompt Agent</strong>: Builds context-aware prompts combining style preferences, document goals, and learned rules</li>
-          <li><strong>Critique Agent</strong>: Evaluates edit quality on a 0-1 alignment scale, triggers re-generation if below threshold</li>
+          <li><strong>Critique + Learning Agent</strong>: Dual-role agent that evaluates edit quality (0-1 alignment score) and learns from user decisions—extracts style adjustments, patterns, and rules from accept/reject feedback</li>
           <li><strong>Constraint Extraction Agent</strong>: Parses external requirements (journal guidelines, style guides)</li>
         </ul>
       </DocSection>
@@ -670,11 +670,14 @@ function BlogSection() {
          ┌────────────────────┼────────────────────┐
          ▼                    ▼                    ▼
 ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐
-│  INTENT AGENT   │  │  PROMPT AGENT   │  │ CRITIQUE AGENT  │
-│                 │  │                 │  │                 │
-│ analyzeIntent() │  │ buildSystem-   │  │ critiqueEdit()  │
-│ synthesizeGoals │  │   Prompt()      │  │ learnFrom-      │
+│  INTENT AGENT   │  │  PROMPT AGENT   │  │ CRITIQUE +      │
+│                 │  │                 │  │ LEARNING AGENT  │
+│ analyzeIntent() │  │ buildSystem-    │  │                 │
+│ synthesizeGoals │  │   Prompt()      │  │ critiqueEdit()  │
+│                 │  │                 │  │ learnFrom-      │
 │                 │  │                 │  │   Decision()    │
+│                 │  │                 │  │ analyzeEdit-    │
+│                 │  │                 │  │   Patterns()    │
 └─────────────────┘  └─────────────────┘  └─────────────────┘`}</pre>
         </div>
 
@@ -683,7 +686,14 @@ function BlogSection() {
           <li><strong>Orchestrator</strong> (<code>orchestrateEdit()</code>): Manages the entire edit pipeline—loads preferences, coordinates agents, handles retries, saves results</li>
           <li><strong>Intent Agent</strong> (<code>analyzeIntent()</code>, <code>synthesizeGoals()</code>): Understands paragraph purpose and document objectives before editing</li>
           <li><strong>Prompt Agent</strong> (<code>buildSystemPrompt()</code>): Compiles user preferences into LLM system prompts</li>
-          <li><strong>Critique Agent</strong> (<code>critiqueEdit()</code>, <code>learnFromDecision()</code>): Evaluates edit quality and extracts learning signals</li>
+          <li><strong>Critique + Learning Agent</strong> (<code>critique-agent.ts</code>): Dual-role agent that both evaluates edits and learns from user decisions:
+            <ul className="mt-1 ml-4 text-sm">
+              <li><code>critiqueEdit()</code> — Scores alignment (0-1)</li>
+              <li><code>learnFromDecision()</code> — Learns from accept/reject</li>
+              <li><code>analyzeEditPatterns()</code> — Batch pattern analysis</li>
+              <li><code>learnFromDiff()</code> — Word-level toggle learning</li>
+            </ul>
+          </li>
         </ul>
       </DocSection>
 

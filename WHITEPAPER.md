@@ -27,7 +27,7 @@ Styler takes a fundamentally different approach:
 
 ### 2.1 Multi-Agent Coordination
 
-Styler's intelligence comes from coordinating five specialized agents:
+Styler's intelligence comes from coordinating four specialized agents:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -38,13 +38,15 @@ Styler's intelligence comes from coordinating five specialized agents:
          ┌────────────────────┼────────────────────┐
          ▼                    ▼                    ▼
 ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐
-│  INTENT AGENT   │  │  PROMPT AGENT   │  │ CRITIQUE AGENT  │
-│                 │  │                 │  │                 │
-│ • Document goals│  │ • Style merging │  │ • Alignment     │
-│ • Paragraph     │  │ • Context       │  │   scoring       │
-│   purpose       │  │   building      │  │ • Issue         │
-│ • Connection    │  │ • Mode-specific │  │   detection     │
-│   analysis      │  │   instructions  │  │ • Learning      │
+│  INTENT AGENT   │  │  PROMPT AGENT   │  │ CRITIQUE +      │
+│                 │  │                 │  │ LEARNING AGENT  │
+│ • Document goals│  │ • Style merging │  │                 │
+│ • Paragraph     │  │ • Context       │  │ • Alignment     │
+│   purpose       │  │   building      │  │   scoring       │
+│ • Connection    │  │ • Mode-specific │  │ • Issue         │
+│   analysis      │  │   instructions  │  │   detection     │
+│                 │  │                 │  │ • Preference    │
+│                 │  │                 │  │   learning      │
 └─────────────────┘  └─────────────────┘  └─────────────────┘
 ```
 
@@ -54,7 +56,7 @@ Styler's intelligence comes from coordinating five specialized agents:
 
 **Prompt Agent**: Builds context-aware prompts by combining style preferences, document goals, section context, and learned rules. It handles syntax-specific instructions for LaTeX, Markdown, and plain text.
 
-**Critique Agent**: Evaluates edit quality on a 0-1 alignment scale, identifies issues (verbosity, formality, word choice, structure, tone), and predicts user acceptance probability. Triggers re-generation if alignment is too low.
+**Critique + Learning Agent**: A dual-role agent that both evaluates edits and learns from user decisions. For evaluation, it scores edit quality on a 0-1 alignment scale, identifies issues (verbosity, formality, word choice, structure, tone), and triggers re-generation if alignment is too low. For learning, it analyzes accept/reject decisions to extract style adjustments, patterns, and rules that improve future edits.
 
 **Constraint Extraction Agent**: Parses external requirements (journal guidelines, grant calls, style guides) and converts them into structured rules that inform the editing process.
 

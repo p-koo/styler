@@ -49,8 +49,12 @@ Download the latest release for your platform:
 
 1. Download and open the DMG
 2. Drag Styler to Applications
-3. Launch Styler (right-click → Open on first launch to bypass Gatekeeper)
-4. Configure your API key in Settings → API Key Configuration
+3. Remove quarantine (required for unsigned apps):
+   ```bash
+   sudo xattr -rd com.apple.quarantine /Applications/Styler.app
+   ```
+4. Launch Styler
+5. Configure your API key in Settings
 
 > **Note:** You'll need an API key from [Anthropic](https://console.anthropic.com/settings/keys) or [OpenAI](https://platform.openai.com/api-keys) to use Styler.
 

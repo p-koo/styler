@@ -338,3 +338,60 @@ export async function importPreferences(json: string): Promise<PreferenceStore> 
   await savePreferences(store);
   return store;
 }
+
+/**
+ * Bake learned rules from profiles into the base style at a given strength
+ *
+ * @param strength - Value between 0 and 1 (e.g., 0.5 for 50%)
+ * @returns The updated base style and count of rules baked
+ */
+export async function bakeLearnedRules(
+  strength: number
+): Promise<{ baseStyle: BaseStyle; rulesBaked: number }> {
+  const store = await loadPreferences();
+
+  // Collect all learned rules from audience profiles
+  const profileRules: LearnedRule[] = [];
+  for (const profile of store.audienceProfiles) {
+    const rules = profile.overrides.learnedRules || [];
+    for (const rule of rules) {
+      profileRules.push(rule);
+    }
+  }
+
+  // Get existing base rules for deduplication
+  const existingRuleTexts = new Set(
+    store.baseStyle.learnedRules.map(r => r.rule.toLowerCase())
+  );
+
+  // Filter out rules that already exist in base style
+  const newRules = profileRules.filter(
+    r => !existingRuleTexts.has(r.rule.toLowerCase())
+  );
+
+  // Apply strength by scaling confidence
+  const bakedRules: LearnedRule[] = newRules.map(rule => ({
+    ...rule,
+    confidence: Math.min(1, rule.confidence * strength),
+    source: 'inferred' as const, // Mark as baked from profiles
+    timestamp: new Date().toISOString(),
+  }));
+
+  // Merge into base style
+  store.baseStyle.learnedRules = [
+    ...store.baseStyle.learnedRules,
+    ...bakedRules,
+  ];
+
+  // Keep only the 100 most recent rules
+  if (store.baseStyle.learnedRules.length > 100) {
+    store.baseStyle.learnedRules = store.baseStyle.learnedRules.slice(-100);
+  }
+
+  await savePreferences(store);
+
+  return {
+    baseStyle: store.baseStyle,
+    rulesBaked: bakedRules.length,
+  };
+}

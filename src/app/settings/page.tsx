@@ -551,32 +551,23 @@ export default function SettingsPage() {
                 className="w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)]"
               />
               <datalist id="model-suggestions">
-                {appConfig?.hasAnthropicKey && (
-                  <>
-                    <option value="claude-sonnet-4-20250514" />
-                    <option value="claude-opus-4-20250514" />
-                    <option value="claude-3-5-sonnet-20241022" />
-                    <option value="claude-3-5-haiku-20241022" />
-                  </>
-                )}
-                {appConfig?.hasOpenaiKey && (
-                  <>
-                    <option value="gpt-5.2" />
-                    <option value="gpt-5.1" />
-                    <option value="gpt-4o" />
-                    <option value="gpt-4o-mini" />
-                    <option value="o3-mini" />
-                    <option value="o1" />
-                    <option value="o1-mini" />
-                  </>
-                )}
-                {appConfig?.hasOllamaUrl && (
-                  <>
-                    <option value="llama3.2" />
-                    <option value="mistral" />
-                    <option value="mixtral" />
-                  </>
-                )}
+                {/* Anthropic models */}
+                <option value="claude-sonnet-4-20250514" />
+                <option value="claude-opus-4-20250514" />
+                <option value="claude-3-5-sonnet-20241022" />
+                <option value="claude-3-5-haiku-20241022" />
+                {/* OpenAI models */}
+                <option value="gpt-5.2" />
+                <option value="gpt-5.1" />
+                <option value="gpt-4o" />
+                <option value="gpt-4o-mini" />
+                <option value="o3-mini" />
+                <option value="o1" />
+                <option value="o1-mini" />
+                {/* Ollama models */}
+                <option value="llama3.2" />
+                <option value="mistral" />
+                <option value="mixtral" />
               </datalist>
               <p className="mt-1 text-xs text-[var(--muted-foreground)]">
                 Type any model name or select from suggestions.

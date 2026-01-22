@@ -542,35 +542,34 @@ export default function SettingsPage() {
             {/* AI Model */}
             <div>
               <label className="block text-sm font-medium mb-2">AI Model</label>
-              <input
-                type="text"
-                list="model-suggestions"
+              <select
                 value={selectedModel}
                 onChange={(e) => handleModelChange(e.target.value)}
-                placeholder="Enter model name (e.g., claude-sonnet-4-20250514)"
                 className="w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)]"
-              />
-              <datalist id="model-suggestions">
-                {/* Anthropic models */}
-                <option value="claude-sonnet-4-20250514" />
-                <option value="claude-opus-4-20250514" />
-                <option value="claude-3-5-sonnet-20241022" />
-                <option value="claude-3-5-haiku-20241022" />
-                {/* OpenAI models */}
-                <option value="gpt-5.2" />
-                <option value="gpt-5.1" />
-                <option value="gpt-4o" />
-                <option value="gpt-4o-mini" />
-                <option value="o3-mini" />
-                <option value="o1" />
-                <option value="o1-mini" />
-                {/* Ollama models */}
-                <option value="llama3.2" />
-                <option value="mistral" />
-                <option value="mixtral" />
-              </datalist>
+              >
+                <optgroup label="Anthropic">
+                  <option value="claude-sonnet-4-20250514">claude-sonnet-4-20250514</option>
+                  <option value="claude-opus-4-20250514">claude-opus-4-20250514</option>
+                  <option value="claude-3-5-sonnet-20241022">claude-3-5-sonnet-20241022</option>
+                  <option value="claude-3-5-haiku-20241022">claude-3-5-haiku-20241022</option>
+                </optgroup>
+                <optgroup label="OpenAI">
+                  <option value="gpt-5.2">gpt-5.2</option>
+                  <option value="gpt-5.1">gpt-5.1</option>
+                  <option value="gpt-4o">gpt-4o</option>
+                  <option value="gpt-4o-mini">gpt-4o-mini</option>
+                  <option value="o3-mini">o3-mini</option>
+                  <option value="o1">o1</option>
+                  <option value="o1-mini">o1-mini</option>
+                </optgroup>
+                <optgroup label="Ollama">
+                  <option value="llama3.2">llama3.2</option>
+                  <option value="mistral">mistral</option>
+                  <option value="mixtral">mixtral</option>
+                </optgroup>
+              </select>
               <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-                Type any model name or select from suggestions.
+                Select your preferred AI model.
               </p>
             </div>
 

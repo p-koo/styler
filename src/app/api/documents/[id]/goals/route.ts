@@ -7,7 +7,9 @@ import {
   saveDocumentPreferences,
 } from '@/memory/document-preferences';
 
-const DOCUMENTS_DIR = path.join(process.cwd(), 'documents');
+// Use USER_DATA_PATH (from Electron) if available, otherwise use cwd
+const BASE_PATH = process.env.USER_DATA_PATH || process.cwd();
+const DOCUMENTS_DIR = path.join(BASE_PATH, 'documents');
 
 interface RouteContext {
   params: Promise<{ id: string }>;

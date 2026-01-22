@@ -3,7 +3,9 @@ import fs from 'fs/promises';
 import path from 'path';
 import type { SavedDocument } from '../route';
 
-const DOCUMENTS_DIR = path.join(process.cwd(), 'documents');
+// Use USER_DATA_PATH (from Electron) if available, otherwise use cwd
+const BASE_PATH = process.env.USER_DATA_PATH || process.cwd();
+const DOCUMENTS_DIR = path.join(BASE_PATH, 'documents');
 
 // GET /api/documents/[id] - Get a single document
 export async function GET(

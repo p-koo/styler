@@ -5,8 +5,9 @@ const { spawn } = require("child_process");
 const isDev = process.env.NODE_ENV === "development";
 const PORT = 3000;
 
-let mainWindow;
-let nextServer;
+let mainWindow = null;
+let nextServer = null;
+let isQuitting = false;
 
 // Prevent multiple instances
 const gotTheLock = app.requestSingleInstanceLock();
@@ -15,9 +16,9 @@ if (!gotTheLock) {
   app.quit();
 } else {
   app.on("second-instance", () => {
-    // Someone tried to run a second instance, focus our window instead
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
       mainWindow.focus();
     }
   });
@@ -29,7 +30,6 @@ function createWindow() {
     height: 800,
     minWidth: 800,
     minHeight: 600,
-    show: false, // Don't show until ready
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -40,16 +40,6 @@ function createWindow() {
   const url = `http://localhost:${PORT}`;
   mainWindow.loadURL(url);
 
-  // Show window when page fully loads (prevents dock bouncing)
-  mainWindow.webContents.once("did-finish-load", () => {
-    // Show dock icon now that we're ready
-    if (process.platform === "darwin" && app.dock) {
-      app.dock.show();
-    }
-    mainWindow.show();
-    mainWindow.focus();
-  });
-
   // Open external links in browser
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith("http")) {
@@ -59,6 +49,14 @@ function createWindow() {
     return { action: "allow" };
   });
 
+  // On macOS, hide window instead of closing (standard behavior)
+  mainWindow.on("close", (event) => {
+    if (process.platform === "darwin" && !isQuitting) {
+      event.preventDefault();
+      mainWindow.hide();
+    }
+  });
+
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
@@ -66,16 +64,12 @@ function createWindow() {
 
 function startNextServer() {
   return new Promise((resolve, reject) => {
-    // In production, the standalone server is in resources
     const basePath = isDev
       ? path.join(__dirname, "..")
       : path.join(process.resourcesPath);
 
     const serverPath = path.join(basePath, ".next", "standalone", "server.js");
 
-    // Copy static files to standalone if needed (handled by build process)
-    // Only pass essential env vars - don't leak user's API keys from shell
-    // Set USER_DATA_PATH so the app stores data in the right place
     const userDataPath = app.getPath("userData");
     const cleanEnv = {
       PATH: process.env.PATH,
@@ -87,8 +81,6 @@ function startNextServer() {
       USER_DATA_PATH: userDataPath
     };
 
-    // Use Electron's node to run the server
-    // process.execPath points to Electron, but we can use the ELECTRON_RUN_AS_NODE env var
     const nodeEnv = {
       ...cleanEnv,
       ELECTRON_RUN_AS_NODE: "1"
@@ -118,7 +110,6 @@ function startNextServer() {
       reject(err);
     });
 
-    // Fallback: resolve after timeout
     setTimeout(resolve, 5000);
   });
 }
@@ -145,14 +136,8 @@ async function waitForServer(url, maxAttempts = 30) {
   return false;
 }
 
-// Only proceed if we got the single instance lock
 if (gotTheLock) {
   app.whenReady().then(async () => {
-    // Hide dock icon until window is ready (prevents bouncing)
-    if (process.platform === "darwin" && app.dock) {
-      app.dock.hide();
-    }
-
     if (!isDev) {
       console.log("Starting Next.js server...");
       await startNextServer();
@@ -160,31 +145,26 @@ if (gotTheLock) {
     }
 
     createWindow();
+  });
 
-    app.on("activate", () => {
-      if (BrowserWindow.getAllWindows().length === 0) {
-        // Show dock icon before creating window
-        if (process.platform === "darwin" && app.dock) {
-          app.dock.show();
-        }
-        createWindow();
-      } else if (mainWindow) {
-        mainWindow.show();
-        mainWindow.focus();
-      }
-    });
+  // macOS: clicking dock icon when window is hidden should show it
+  app.on("activate", () => {
+    if (mainWindow === null) {
+      createWindow();
+    } else {
+      mainWindow.show();
+      mainWindow.focus();
+    }
   });
 
   app.on("window-all-closed", () => {
-    if (nextServer) {
-      nextServer.kill();
-    }
     if (process.platform !== "darwin") {
       app.quit();
     }
   });
 
   app.on("before-quit", () => {
+    isQuitting = true;
     if (nextServer) {
       nextServer.kill("SIGTERM");
     }

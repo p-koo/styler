@@ -310,7 +310,11 @@ export async function clearDocumentAdjustments(
 
   const cleared: DocumentPreferences = {
     ...prefs,
-    adjustments: { ...DEFAULT_ADJUSTMENTS },
+    adjustments: {
+      ...DEFAULT_ADJUSTMENTS,
+      // Preserve document goals - they should stay fixed for the document
+      documentGoals: prefs.adjustments.documentGoals,
+    },
     editHistory: keepHistory ? prefs.editHistory : [],
     updatedAt: new Date().toISOString(),
   };

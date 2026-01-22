@@ -32,6 +32,8 @@ export const DEFAULT_ADJUSTMENTS: DocumentAdjustments = {
   learnedRules: [],
   editExamples: [],
   diffPatterns: [],
+  documentGoals: undefined,
+  genAlphaMode: undefined,
 };
 
 /**

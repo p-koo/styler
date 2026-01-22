@@ -204,9 +204,12 @@ export default function DocumentProfilePanel({
     saveAdjustments({ learnedRules: newRules });
   };
 
-  // Consolidate guidance items using LLM
+  // Consolidate guidance and rules using LLM
   const consolidateGuidance = async () => {
-    if (adjustments.additionalFramingGuidance.length < 3) return;
+    const hasGuidance = adjustments.additionalFramingGuidance.length >= 3;
+    const hasRules = adjustments.learnedRules.length >= 3;
+
+    if (!hasGuidance && !hasRules) return;
 
     setConsolidating(true);
     try {
@@ -224,15 +227,28 @@ export default function DocumentProfilePanel({
 
       const data = await res.json();
 
-      if (data.consolidatedGuidance) {
-        setAdjustments(prev => ({
-          ...prev,
-          additionalFramingGuidance: data.consolidatedGuidance
+      const updates: Partial<typeof adjustments> = {};
+
+      if (data.consolidatedGuidance && data.consolidatedGuidance.length > 0) {
+        updates.additionalFramingGuidance = data.consolidatedGuidance;
+      }
+
+      if (data.consolidatedRules && data.consolidatedRules.length > 0) {
+        // Convert rule strings back to LearnedRule objects
+        updates.learnedRules = data.consolidatedRules.map((rule: string) => ({
+          rule,
+          confidence: 0.9,
+          source: 'inferred' as const,
+          timestamp: new Date().toISOString(),
         }));
-        saveAdjustments({ additionalFramingGuidance: data.consolidatedGuidance });
+      }
+
+      if (Object.keys(updates).length > 0) {
+        setAdjustments(prev => ({ ...prev, ...updates }));
+        saveAdjustments(updates);
       }
     } catch (err) {
-      alert('Failed to consolidate guidance');
+      alert('Failed to consolidate');
     } finally {
       setConsolidating(false);
     }
@@ -705,20 +721,22 @@ export default function DocumentProfilePanel({
         {/* Guidance Tab */}
         {activeTab === 'guidance' && (
           <div className="space-y-4">
+            {/* Consolidate button - shows when either guidance or rules can be consolidated */}
+            {(adjustments.additionalFramingGuidance.length >= 3 || adjustments.learnedRules.length >= 3) && (
+              <button
+                onClick={consolidateGuidance}
+                disabled={consolidating}
+                className="w-full py-2 text-xs bg-amber-50 text-amber-700 rounded-lg hover:bg-amber-100 disabled:opacity-50 flex items-center justify-center gap-2"
+                title="Use AI to merge similar guidance and rules into fewer, clearer items"
+              >
+                {consolidating ? 'Consolidating...' : '✨ Consolidate All'}
+              </button>
+            )}
+
             {/* Framing Guidance */}
             <div>
               <div className="flex items-center justify-between mb-2">
                 <h4 className="text-xs font-medium">Framing & Constraints</h4>
-                {adjustments.additionalFramingGuidance.length >= 3 && (
-                  <button
-                    onClick={consolidateGuidance}
-                    disabled={consolidating}
-                    className="text-[10px] px-2 py-0.5 bg-amber-50 text-amber-700 rounded hover:bg-amber-100 disabled:opacity-50"
-                    title="Use AI to merge similar guidance into fewer, clearer items"
-                  >
-                    {consolidating ? 'Consolidating...' : '✨ Consolidate'}
-                  </button>
-                )}
               </div>
               <div className="space-y-1 mb-2 min-h-[24px]">
                 {adjustments.additionalFramingGuidance.map((g, i) => (

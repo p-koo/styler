@@ -907,7 +907,7 @@ AVOID WORDS: breakthrough, novel`}</pre>
       </DocSection>
 
       <DocSection title="5. The Learning System">
-        <p>Learning happens through the Critique Agent when users accept, reject, or modify edits.</p>
+        <p>Learning happens through the Learning Agent when users accept, reject, or modify edits.</p>
 
         <h4>Decision Recording Flow</h4>
         <div className="not-prose my-4 p-4 bg-[var(--muted)]/30 rounded-lg font-mono text-xs overflow-x-auto">

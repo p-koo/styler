@@ -666,18 +666,16 @@ function BlogSection() {
 │         File: src/agents/orchestrator-agent.ts               │
 └─────────────────────────────────────────────────────────────┘
                               │
-         ┌────────────────────┼────────────────────┐
-         ▼                    ▼                    ▼
-┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐
-│  INTENT AGENT   │  │  PROMPT AGENT   │  │ CRITIQUE +      │
-│                 │  │                 │  │ LEARNING AGENT  │
-│ analyzeIntent() │  │ buildSystem-    │  │                 │
-│ synthesizeGoals │  │   Prompt()      │  │ critiqueEdit()  │
-│                 │  │                 │  │ learnFrom-      │
-│                 │  │                 │  │   Decision()    │
-│                 │  │                 │  │ analyzeEdit-    │
-│                 │  │                 │  │   Patterns()    │
-└─────────────────┘  └─────────────────┘  └─────────────────┘`}</pre>
+    ┌─────────────┬───────────┼───────────┬─────────────┐
+    ▼             ▼           ▼           ▼             ▼
+┌────────┐  ┌──────────┐  ┌────────┐  ┌──────────┐  ┌──────────┐
+│ INTENT │  │  PROMPT  │  │CRITIQUE│  │ LEARNING │  │CONSTRAINT│
+│ AGENT  │  │  AGENT   │  │ AGENT  │  │  AGENT   │  │  AGENT   │
+│        │  │          │  │        │  │          │  │          │
+│analyze │  │ build-   │  │critique│  │ learnFrom│  │ extract- │
+│Intent()│  │ System-  │  │Edit()  │  │Decision()│  │Constraints│
+│        │  │ Prompt() │  │        │  │          │  │          │
+└────────┘  └──────────┘  └────────┘  └──────────┘  └──────────┘`}</pre>
         </div>
 
         <p>Each agent has a specific responsibility:</p>

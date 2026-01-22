@@ -40,8 +40,8 @@ function createWindow() {
   const url = `http://localhost:${PORT}`;
   mainWindow.loadURL(url);
 
-  // Show window when ready (prevents dock bouncing)
-  mainWindow.once("ready-to-show", () => {
+  // Show window when page fully loads (prevents dock bouncing)
+  mainWindow.webContents.once("did-finish-load", () => {
     mainWindow.show();
     mainWindow.focus();
   });

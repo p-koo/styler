@@ -43,7 +43,7 @@ Download the latest release for your platform:
 
 | Platform | Download |
 |----------|----------|
-| **macOS** | [Styler-1.1.4.dmg](https://github.com/p-koo/styler/releases/latest) |
+| **macOS** | [Styler-1.1.5.dmg](https://github.com/p-koo/styler/releases/latest) |
 | **Windows** | Coming soon |
 | **Linux** | Coming soon |
 

@@ -42,6 +42,10 @@ function createWindow() {
 
   // Show window when page fully loads (prevents dock bouncing)
   mainWindow.webContents.once("did-finish-load", () => {
+    // Show dock icon now that we're ready
+    if (process.platform === "darwin" && app.dock) {
+      app.dock.show();
+    }
     mainWindow.show();
     mainWindow.focus();
   });
@@ -144,6 +148,11 @@ async function waitForServer(url, maxAttempts = 30) {
 // Only proceed if we got the single instance lock
 if (gotTheLock) {
   app.whenReady().then(async () => {
+    // Hide dock icon until window is ready (prevents bouncing)
+    if (process.platform === "darwin" && app.dock) {
+      app.dock.hide();
+    }
+
     if (!isDev) {
       console.log("Starting Next.js server...");
       await startNextServer();

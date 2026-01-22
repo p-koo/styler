@@ -564,23 +564,22 @@ function WhitepaperSection() {
 │         Coordinates the edit-critique-refine loop            │
 └─────────────────────────────────────────────────────────────┘
                               │
-         ┌────────────────────┼────────────────────┐
-         ▼                    ▼                    ▼
-┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐
-│  INTENT AGENT   │  │  PROMPT AGENT   │  │ CRITIQUE AGENT  │
-│                 │  │                 │  │                 │
-│ • Document goals│  │ • Style merging │  │ • Alignment     │
-│ • Paragraph     │  │ • Context       │  │   scoring       │
-│   purpose       │  │   building      │  │ • Issue         │
-│ • Connection    │  │ • Mode-specific │  │   detection     │
-│   analysis      │  │   instructions  │  │ • Learning      │
-└─────────────────┘  └─────────────────┘  └─────────────────┘`}</pre>
+    ┌─────────────┬───────────┼───────────┬─────────────┐
+    ▼             ▼           ▼           ▼             ▼
+┌────────┐  ┌──────────┐  ┌────────┐  ┌──────────┐  ┌──────────┐
+│ INTENT │  │  PROMPT  │  │CRITIQUE│  │ LEARNING │  │CONSTRAINT│
+│ AGENT  │  │  AGENT   │  │ AGENT  │  │  AGENT   │  │  AGENT   │
+│        │  │          │  │        │  │          │  │          │
+│Document│  │ Style    │  │Alignment│ │ Pattern  │  │ External │
+│ goals  │  │ merging  │  │ scoring │ │ learning │  │  rules   │
+└────────┘  └──────────┘  └────────┘  └──────────┘  └──────────┘`}</pre>
         </div>
         <ul>
           <li><strong>Orchestrator Agent</strong>: Central coordinator managing the edit-critique-refine loop</li>
           <li><strong>Intent Agent</strong>: Analyzes document goals and paragraph purpose before editing</li>
           <li><strong>Prompt Agent</strong>: Builds context-aware prompts combining style preferences, document goals, and learned rules</li>
-          <li><strong>Critique + Learning Agent</strong>: Dual-role agent that evaluates edit quality (0-1 alignment score) and learns from user decisions—extracts style adjustments, patterns, and rules from accept/reject feedback</li>
+          <li><strong>Critique Agent</strong>: Fast evaluation during edit loop—scores alignment (0-1), identifies issues. Latency-critical (user waiting)</li>
+          <li><strong>Learning Agent</strong>: Thorough analysis after decisions—extracts style patterns, learns adjustments. Not latency-critical</li>
           <li><strong>Constraint Extraction Agent</strong>: Parses external requirements (journal guidelines, style guides)</li>
         </ul>
       </DocSection>
@@ -686,12 +685,19 @@ function BlogSection() {
           <li><strong>Orchestrator</strong> (<code>orchestrateEdit()</code>): Manages the entire edit pipeline—loads preferences, coordinates agents, handles retries, saves results</li>
           <li><strong>Intent Agent</strong> (<code>analyzeIntent()</code>, <code>synthesizeGoals()</code>): Understands paragraph purpose and document objectives before editing</li>
           <li><strong>Prompt Agent</strong> (<code>buildSystemPrompt()</code>): Compiles user preferences into LLM system prompts</li>
-          <li><strong>Critique + Learning Agent</strong> (<code>critique-agent.ts</code>): Dual-role agent that both evaluates edits and learns from user decisions:
+          <li><strong>Critique Agent</strong> (<code>critique-agent.ts</code>): Fast edit evaluation during the edit loop (user waiting):
             <ul className="mt-1 ml-4 text-sm">
               <li><code>critiqueEdit()</code> — Scores alignment (0-1)</li>
+              <li><code>applyAdjustmentsToStyle()</code> — Merges document adjustments</li>
+              <li><code>buildDocumentContextPrompt()</code> — Builds adjustment context</li>
+            </ul>
+          </li>
+          <li><strong>Learning Agent</strong> (<code>learning-agent.ts</code>): Thorough preference learning after decisions (user not waiting):
+            <ul className="mt-1 ml-4 text-sm">
               <li><code>learnFromDecision()</code> — Learns from accept/reject</li>
               <li><code>analyzeEditPatterns()</code> — Batch pattern analysis</li>
-              <li><code>learnFromDiff()</code> — Word-level toggle learning</li>
+              <li><code>learnFromExplicitFeedback()</code> — Learns from feedback chips</li>
+              <li><code>consolidateLearnedRules()</code> — Merges similar rules</li>
             </ul>
           </li>
         </ul>
@@ -1064,7 +1070,8 @@ If you only cut 10-20%, you have FAILED."`}</pre>
 │   ├── orchestrator-agent.ts   # Main coordination loop
 │   ├── intent-agent.ts         # Document/paragraph analysis
 │   ├── prompt-agent.ts         # Prompt construction
-│   ├── critique-agent.ts       # Evaluation + learning
+│   ├── critique-agent.ts       # Fast evaluation (latency-critical)
+│   ├── learning-agent.ts       # Preference learning from feedback
 │   └── constraint-extraction-agent.ts  # External doc parsing
 │
 ├── memory/

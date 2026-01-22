@@ -27,7 +27,7 @@ Styler takes a fundamentally different approach:
 
 ### 2.1 Multi-Agent Coordination
 
-Styler's intelligence comes from coordinating four specialized agents:
+Styler's intelligence comes from coordinating five specialized agents:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -35,19 +35,18 @@ Styler's intelligence comes from coordinating four specialized agents:
 │         Coordinates the edit-critique-refine loop            │
 └─────────────────────────────────────────────────────────────┘
                               │
-         ┌────────────────────┼────────────────────┐
-         ▼                    ▼                    ▼
-┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐
-│  INTENT AGENT   │  │  PROMPT AGENT   │  │ CRITIQUE +      │
-│                 │  │                 │  │ LEARNING AGENT  │
-│ • Document goals│  │ • Style merging │  │                 │
-│ • Paragraph     │  │ • Context       │  │ • Alignment     │
-│   purpose       │  │   building      │  │   scoring       │
-│ • Connection    │  │ • Mode-specific │  │ • Issue         │
-│   analysis      │  │   instructions  │  │   detection     │
-│                 │  │                 │  │ • Preference    │
-│                 │  │                 │  │   learning      │
-└─────────────────┘  └─────────────────┘  └─────────────────┘
+    ┌─────────────┬───────────┼───────────┬─────────────┐
+    ▼             ▼           ▼           ▼             ▼
+┌────────┐  ┌──────────┐  ┌────────┐  ┌──────────┐  ┌──────────┐
+│ INTENT │  │  PROMPT  │  │CRITIQUE│  │ LEARNING │  │CONSTRAINT│
+│ AGENT  │  │  AGENT   │  │ AGENT  │  │  AGENT   │  │  AGENT   │
+│        │  │          │  │        │  │          │  │          │
+│Document│  │ Style    │  │Alignment│ │ Pattern  │  │ External │
+│ goals  │  │ merging  │  │ scoring │ │ learning │  │  rules   │
+│        │  │          │  │        │  │          │  │          │
+│Paragraph│ │ Context  │  │ Issue  │  │ Style    │  │ Journal  │
+│ purpose│  │ building │  │detection│ │ adjust   │  │guidelines│
+└────────┘  └──────────┘  └────────┘  └──────────┘  └──────────┘
 ```
 
 **Orchestrator Agent**: The central coordinator that manages the edit-critique-refine loop. It calls the Intent Agent before generating edits, manages up to 3 refinement iterations, and ensures edits meet a quality threshold (alignment score ≥ 0.8) before presenting to the user.
@@ -56,7 +55,9 @@ Styler's intelligence comes from coordinating four specialized agents:
 
 **Prompt Agent**: Builds context-aware prompts by combining style preferences, document goals, section context, and learned rules. It handles syntax-specific instructions for LaTeX, Markdown, and plain text.
 
-**Critique + Learning Agent**: A dual-role agent that both evaluates edits and learns from user decisions. For evaluation, it scores edit quality on a 0-1 alignment scale, identifies issues (verbosity, formality, word choice, structure, tone), and triggers re-generation if alignment is too low. For learning, it analyzes accept/reject decisions to extract style adjustments, patterns, and rules that improve future edits.
+**Critique Agent**: Evaluates edit quality on a 0-1 alignment scale, identifies issues (verbosity, formality, word choice, structure, tone), and triggers re-generation if alignment is too low. Runs during the edit loop where latency matters—the user is waiting for results.
+
+**Learning Agent**: Analyzes accept/reject decisions to extract style adjustments, patterns, and rules that improve future edits. Runs after user decisions where latency is less critical, allowing for more thorough pattern analysis.
 
 **Constraint Extraction Agent**: Parses external requirements (journal guidelines, grant calls, style guides) and converts them into structured rules that inform the editing process.
 
@@ -505,8 +506,13 @@ The system is designed for writers who want AI assistance without AI homogenizat
 
 ### Critique Agent
 - **File**: `src/agents/critique-agent.ts`
-- **Role**: Edit evaluation and learning
-- **Key functions**: `critiqueEdit()`, `learnFromDecision()`, `learnFromDiff()`
+- **Role**: Fast edit evaluation (latency-critical, runs during edit loop)
+- **Key functions**: `critiqueEdit()`, `applyAdjustmentsToStyle()`, `buildDocumentContextPrompt()`
+
+### Learning Agent
+- **File**: `src/agents/learning-agent.ts`
+- **Role**: Preference learning from feedback (runs after user decisions)
+- **Key functions**: `learnFromDecision()`, `analyzeEditPatterns()`, `learnFromExplicitFeedback()`, `consolidateLearnedRules()`
 
 ### Constraint Extraction Agent
 - **File**: `src/agents/constraint-extraction-agent.ts`

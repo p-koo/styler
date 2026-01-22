@@ -55,7 +55,7 @@ export default function AboutPage() {
           <div className="p-6 rounded-xl bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 border border-blue-200 dark:border-blue-900/50">
             <h2 className="text-2xl font-semibold text-blue-700 dark:text-blue-400 mb-2">The Agents</h2>
             <p className="text-blue-700/80 dark:text-blue-300/80 mb-4">
-              Four specialized agents work together:
+              Five specialized agents work together:
             </p>
 
             <div className="space-y-2">
@@ -78,9 +78,15 @@ export default function AboutPage() {
                 color="blue"
               />
               <AgentCard
-                name="Critique + Learning Agent"
-                role="Evaluates edits AND learns from your decisions"
-                details="Dual-role agent: scores alignment (0-1), identifies issues, AND extracts style patterns from accept/reject feedback. Learns adjustments to verbosity, formality, hedging from rejections. Consolidates rules when patterns accumulate."
+                name="Critique Agent"
+                role="Fast edit evaluation during the edit loop"
+                details="Scores alignment (0-1), identifies issues (verbosity, formality, word choice, structure, tone). Runs while user is waiting—optimized for speed."
+                color="blue"
+              />
+              <AgentCard
+                name="Learning Agent"
+                role="Learns from your accept/reject decisions"
+                details="Extracts style patterns from feedback. Learns adjustments to verbosity, formality, hedging from rejections. Consolidates rules when patterns accumulate. Runs after decisions—can be more thorough."
                 color="blue"
               />
             </div>

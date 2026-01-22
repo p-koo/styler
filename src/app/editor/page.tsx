@@ -2732,6 +2732,13 @@ export default function EditorPage() {
                     Editor
                   </div>
                   <Link
+                    href="/guide"
+                    onClick={() => setShowNavMenu(false)}
+                    className="block px-4 py-2 text-sm text-[var(--foreground)] hover:bg-[var(--muted)]"
+                  >
+                    Guide
+                  </Link>
+                  <Link
                     href="/settings"
                     onClick={() => setShowNavMenu(false)}
                     className="block px-4 py-2 text-sm text-[var(--foreground)] hover:bg-[var(--muted)]"

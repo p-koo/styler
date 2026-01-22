@@ -4,13 +4,13 @@ import {
   getOrCreateDocumentPreferences,
   saveDocumentPreferences,
 } from '@/memory/document-preferences';
+import { getEditStats } from '@/agents/critique-agent';
 import {
   learnFromDecision,
   analyzeEditPatterns,
-  getEditStats,
   learnFromExplicitFeedback,
   learnFromDiff,
-} from '@/agents/critique-agent';
+} from '@/agents/learning-agent';
 import type { EditDecision, EditDecisionType, CritiqueAnalysis, FeedbackCategory } from '@/types';
 
 /**

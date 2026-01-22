@@ -29,6 +29,7 @@ function createWindow() {
     height: 800,
     minWidth: 800,
     minHeight: 600,
+    show: false, // Don't show until ready
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -38,6 +39,12 @@ function createWindow() {
 
   const url = `http://localhost:${PORT}`;
   mainWindow.loadURL(url);
+
+  // Show window when ready (prevents dock bouncing)
+  mainWindow.once("ready-to-show", () => {
+    mainWindow.show();
+    mainWindow.focus();
+  });
 
   // Open external links in browser
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {

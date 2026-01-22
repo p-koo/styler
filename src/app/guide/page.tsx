@@ -650,11 +650,30 @@ function BlogSection() {
         <div className="inline-block px-3 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-sm rounded-full mb-4">
           Technical Blog
         </div>
-        <h1 className="text-3xl font-bold text-[var(--foreground)] mb-2">Building Styler: A Deep Dive into Multi-Agent Document Editing</h1>
-        <p className="text-[var(--muted-foreground)]">Architecture, data flows, and implementation details of the ADAPT system</p>
+        <h1 className="text-3xl font-bold text-[var(--foreground)] mb-2">Building an AI Writing Assistant That Actually Sounds Like You</h1>
+        <p className="text-[var(--muted-foreground)]">How we built a multi-agent system that learns your writing style instead of replacing it</p>
       </div>
 
-      <p className="text-lg">This post covers the technical architecture of Styler—how the agents coordinate, what data structures we use, how learning works, and the key design decisions we made along the way.</p>
+      <p className="text-lg">If you&apos;ve ever used ChatGPT to help edit your writing, you&apos;ve probably noticed something: the output sounds like ChatGPT, not like you. It&apos;s polished, sure, but it&apos;s also generic. The hedging patterns, the word choices, the sentence structures—they&apos;re all distinctly AI.</p>
+
+      <p>We built Styler to solve this problem. It&apos;s an AI-powered document editor that learns your personal writing style and preserves it while improving clarity and flow. Here&apos;s how it works under the hood.</p>
+
+      <DocSection title="The Core Problem: Style Drift">
+        <p>When you ask an LLM to &quot;improve&quot; your writing, it applies its default preferences:</p>
+        <ul>
+          <li>More hedging (&quot;It could be argued that...&quot;)</li>
+          <li>Certain word choices (&quot;utilize&quot; instead of &quot;use&quot;)</li>
+          <li>Generic transitions (&quot;Furthermore,&quot; &quot;Moreover,&quot;)</li>
+          <li>A particular level of formality</li>
+        </ul>
+        <p>These aren&apos;t bad choices—they&apos;re just not <em>your</em> choices. And when you&apos;re writing something that needs to sound like you (a research paper, a blog post, a grant proposal), this style drift is a real problem.</p>
+        <p>The naive solution is prompt engineering: &quot;Edit this but keep my voice.&quot; But LLMs don&apos;t know what your voice <em>is</em>. They have no memory of how you write.</p>
+      </DocSection>
+
+      <DocSection title="Our Solution: ADAPT">
+        <p>We built <strong>ADAPT</strong> (Adaptive Document Alignment via Prompt Transformations)—a multi-agent system that coordinates specialized AI agents to understand your style, analyze document intent, generate aligned suggestions, and learn from your feedback.</p>
+        <p>The key insight: instead of sending text directly to an LLM with a generic &quot;improve this&quot; prompt, we orchestrate multiple agents that each handle a specific aspect of the editing process.</p>
+      </DocSection>
 
       <DocSection title="1. System Architecture Overview">
         <p>Styler uses a multi-agent orchestration pattern. Rather than sending text directly to an LLM with &quot;improve this,&quot; we coordinate five specialized agents:</p>
@@ -839,7 +858,47 @@ OrchestrationResult {
         </div>
       </DocSection>
 
-      <DocSection title="4. Prompt Construction Example">
+      <DocSection title="4. The Three-Layer Preference Stack">
+        <p>Style isn&apos;t one-dimensional. You might write differently for a journal paper vs. a blog post vs. an email. We model this with three layers:</p>
+
+        <h4>Layer 1: Base Style (Global)</h4>
+        <div className="not-prose my-4 p-4 bg-[var(--muted)]/30 rounded-lg font-mono text-xs overflow-x-auto">
+          <pre>{`{
+  verbosity: 'moderate',      // terse | moderate | detailed
+  formality: 3,               // 1-5 scale
+  hedgingStyle: 'balanced',   // confident | balanced | cautious
+  activeVoice: true,
+  formatBans: ['emoji'],
+  learnedRules: [
+    { rule: "Avoid 'utilize'", confidence: 0.85 }
+  ]
+}`}</pre>
+        </div>
+
+        <h4>Layer 2: Audience Profiles (Switchable)</h4>
+        <div className="not-prose my-4 p-4 bg-[var(--muted)]/30 rounded-lg font-mono text-xs overflow-x-auto">
+          <pre>{`{
+  name: 'Academic Journal',
+  jargonLevel: 'heavy',
+  formality: 5,
+  lengthGuidance: 'comprehensive',
+  emphasisPoints: ['methodology', 'reproducibility']
+}`}</pre>
+        </div>
+
+        <h4>Layer 3: Document Adjustments (Per-Document)</h4>
+        <div className="not-prose my-4 p-4 bg-[var(--muted)]/30 rounded-lg font-mono text-xs overflow-x-auto">
+          <pre>{`{
+  verbosityAdjust: -0.5,    // Slightly more terse for this doc
+  formalityAdjust: 0,       // Keep profile default
+  hedgingAdjust: +1.0,      // More cautious (it's a bold claim)
+  additionalAvoidWords: ['breakthrough'],
+  documentGoals: { /* synthesized by Intent Agent */ }
+}`}</pre>
+        </div>
+      </DocSection>
+
+      <DocSection title="5. Prompt Construction Example">
         <p>The Prompt Agent (<code>buildSystemPrompt()</code>) compiles preferences into LLM instructions. Here&apos;s a concrete example:</p>
 
         <h4>Input Preferences</h4>
@@ -904,7 +963,7 @@ AVOID WORDS: breakthrough, novel`}</pre>
         <p>This prompt is prepended to every LLM call. The user&apos;s specific instruction (e.g., &quot;make this more confident&quot;) is placed <strong>before</strong> the style instructions so it takes priority.</p>
       </DocSection>
 
-      <DocSection title="5. The Learning System">
+      <DocSection title="6. The Learning System">
         <p>Learning happens through the Learning Agent when users accept, reject, or modify edits.</p>
 
         <h4>Decision Recording Flow</h4>
@@ -983,7 +1042,7 @@ AVOID WORDS: breakthrough, novel`}</pre>
         </ul>
       </DocSection>
 
-      <DocSection title="6. Special Cases">
+      <DocSection title="7. Special Cases">
         <h4>Generation vs. Edit Detection</h4>
         <p>The orchestrator detects generation requests using regex patterns:</p>
         <div className="not-prose my-4 p-4 bg-[var(--muted)]/30 rounded-lg font-mono text-xs overflow-x-auto">
@@ -1021,7 +1080,7 @@ If you only cut 10-20%, you have FAILED."`}</pre>
         </div>
       </DocSection>
 
-      <DocSection title="7. API Reference">
+      <DocSection title="8. API Reference">
         <h4>Key Endpoints</h4>
         <div className="not-prose my-4">
           <table className="text-xs w-full">
@@ -1061,7 +1120,7 @@ If you only cut 10-20%, you have FAILED."`}</pre>
         </div>
       </DocSection>
 
-      <DocSection title="8. File Structure">
+      <DocSection title="9. File Structure">
         <div className="not-prose my-4 p-4 bg-[var(--muted)]/30 rounded-lg font-mono text-xs overflow-x-auto">
           <pre>{`src/
 ├── agents/
@@ -1093,18 +1152,19 @@ If you only cut 10-20%, you have FAILED."`}</pre>
         </div>
       </DocSection>
 
-      <DocSection title="9. Design Decisions">
-        <ul>
-          <li><strong>Multi-agent over monolithic</strong>: Separating concerns makes each agent better and the system more debuggable. The <code>agentTrace</code> log shows exactly what each agent did.</li>
-          <li><strong>Conservative learning</strong>: Early versions learned too aggressively. Dampening (0.35-0.5x) and confidence thresholds prevent oscillation.</li>
-          <li><strong>Style patterns over word memorization</strong>: Learning &quot;prefer simpler vocabulary&quot; generalizes better than learning &quot;don&apos;t use utilize.&quot;</li>
-          <li><strong>User-controlled sliders</strong>: We tried auto-adjusting verbosity/formality based on feedback. Users hated the drift. Sliders are now user-controlled only.</li>
-          <li><strong>Intent before style</strong>: Understanding paragraph purpose (&quot;this introduces methodology&quot;) matters more than surface style. Intent Agent was a late addition but made the biggest quality difference.</li>
-          <li><strong>Transparency</strong>: The <code>convergenceHistory</code> and <code>agentTrace</code> let users see why an edit was generated, building trust.</li>
-        </ul>
+      <DocSection title="10. What We Learned">
+        <p>Building Styler taught us a few things about AI writing assistants:</p>
+        <ol>
+          <li><strong>Multi-agent beats monolithic.</strong> Separating intent analysis, prompt building, critique, and learning into distinct agents makes each one better and the whole system more debuggable. The <code>agentTrace</code> log shows exactly what each agent did.</li>
+          <li><strong>Learning must be conservative.</strong> Early versions learned too aggressively from single data points. Now we require dampening (0.35-0.5x) and confidence thresholds to prevent oscillation.</li>
+          <li><strong>Users want control, not automation.</strong> The toggle-based diff view and iterative refinement loop are more important than fully automated edits. Users want to guide, not delegate.</li>
+          <li><strong>Style sliders should be user-controlled.</strong> We tried having the system auto-adjust verbosity/formality based on feedback. Users hated it—their settings kept drifting. Now sliders are user-controlled only.</li>
+          <li><strong>Intent matters more than style.</strong> Preserving what a paragraph is <em>trying to do</em> is more important than matching surface-level style patterns. The Intent Agent was a late addition but made the biggest quality difference.</li>
+          <li><strong>Separate latency-critical from thorough.</strong> Splitting Critique (fast, runs during edit loop) from Learning (thorough, runs after decisions) enables using different models optimized for each use case.</li>
+        </ol>
       </DocSection>
 
-      <DocSection title="10. Try It">
+      <DocSection title="11. Try It">
         <p>Styler is open source. Clone the repo and explore:</p>
         <div className="not-prose my-4 p-4 bg-[var(--muted)]/30 rounded-lg font-mono text-xs">
           <pre>{`git clone https://github.com/p-koo/styler.git
@@ -1112,7 +1172,9 @@ cd styler
 npm install
 npm run dev`}</pre>
         </div>
-        <p>The key insight: don&apos;t just prompt an LLM—orchestrate specialized agents that understand context, evaluate quality, and learn from feedback. <strong>Your users&apos; voices are worth preserving.</strong></p>
+        <p>The key insight: don&apos;t just prompt an LLM—orchestrate specialized agents that understand context, evaluate quality, and learn from feedback.</p>
+        <p><strong>Your users&apos; voices are worth preserving.</strong></p>
+        <p className="text-sm text-[var(--muted-foreground)] italic mt-6">Styler is built with Next.js, React, and TypeScript. It supports Anthropic Claude, OpenAI GPT, and local Ollama models. All data stays local—no cloud sync, no telemetry.</p>
       </DocSection>
     </div>
   );

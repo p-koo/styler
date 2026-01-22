@@ -360,6 +360,16 @@ The orchestrator detects generation requests using regex patterns:
 - For ADD requests: original + "\n\n" + new_content
 ```
 
+### Terse Mode Enforcement
+
+When `verbosity: 'terse'`, we add explicit word count targets:
+
+```
+"You MUST cut at least 30% of words.
+Original has ~500 words. Output must have <350 words.
+If you only cut 10-20%, you have FAILED."
+```
+
 ### Refinement Context
 
 When users provide feedback on a suggested edit, their current text and feedback become critique issues:

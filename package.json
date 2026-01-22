@@ -111,6 +111,14 @@
       "icon": "build/icon.png",
       "category": "public.app-category.productivity"
     },
+    "dmg": {
+      "icon": "build/icon.png",
+      "iconSize": 128,
+      "contents": [
+        { "x": 130, "y": 220 },
+        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+      ]
+    },
     "win": {
       "target": "nsis",
       "icon": "build/icon.png"

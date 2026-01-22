@@ -10,7 +10,7 @@
     "lint": "next lint",
     "bootstrap": "npx tsx src/bootstrap/cli.ts",
     "electron:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:3000 && NODE_ENV=development electron .\"",
-    "electron:build": "node -e \"const fs=require('fs'); if(fs.existsSync('.env')){fs.renameSync('.env','.env.bak')}\" && next build && node -e \"const fs=require('fs'); if(fs.existsSync('.env.bak')){fs.renameSync('.env.bak','.env')}\" && electron-builder",
+    "electron:build": "node -e \"const fs=require('fs'); if(fs.existsSync('.env')){fs.renameSync('.env','.env.bak')}\" && next build && node -e \"const fs=require('fs'); const p=require('path'); const rmrf=(d)=>{if(fs.existsSync(d)){fs.rmSync(d,{recursive:true})}}; rmrf(p.join('.next','standalone','data')); rmrf(p.join('.next','standalone','documents')); console.log('Cleaned user data from standalone build')\" && node -e \"const fs=require('fs'); if(fs.existsSync('.env.bak')){fs.renameSync('.env.bak','.env')}\" && electron-builder",
     "electron:build:mac": "next build && electron-builder --mac",
     "electron:build:win": "next build && electron-builder --win",
     "electron:build:linux": "next build && electron-builder --linux"

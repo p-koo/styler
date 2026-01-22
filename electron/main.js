@@ -30,6 +30,7 @@ function createWindow() {
     height: 800,
     minWidth: 800,
     minHeight: 600,
+    show: false,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -40,6 +41,22 @@ function createWindow() {
   const url = `http://localhost:${PORT}`;
   mainWindow.loadURL(url);
 
+  // Show window when ready (recommended Electron pattern)
+  mainWindow.once("ready-to-show", () => {
+    mainWindow.show();
+    mainWindow.focus();
+    app.focus({ steal: true });
+  });
+
+  // Fallback: show after timeout if ready-to-show never fires
+  setTimeout(() => {
+    if (mainWindow && !mainWindow.isVisible()) {
+      mainWindow.show();
+      mainWindow.focus();
+      app.focus({ steal: true });
+    }
+  }, 8000);
+
   // Open external links in browser
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith("http")) {
@@ -49,7 +66,7 @@ function createWindow() {
     return { action: "allow" };
   });
 
-  // On macOS, hide window instead of closing (standard behavior)
+  // On macOS, hide window instead of closing
   mainWindow.on("close", (event) => {
     if (process.platform === "darwin" && !isQuitting) {
       event.preventDefault();
@@ -147,13 +164,13 @@ if (gotTheLock) {
     createWindow();
   });
 
-  // macOS: clicking dock icon when window is hidden should show it
   app.on("activate", () => {
     if (mainWindow === null) {
       createWindow();
     } else {
       mainWindow.show();
       mainWindow.focus();
+      app.focus({ steal: true });
     }
   });
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs/promises';
 import path from 'path';
 import type { SavedDocument } from '../route';
+import { deleteDocumentPreferences } from '@/memory/document-preferences';
 
 // Use USER_DATA_PATH (from Electron) if available, otherwise use cwd
 const BASE_PATH = process.env.USER_DATA_PATH || process.cwd();
@@ -35,7 +36,7 @@ export async function GET(
   }
 }
 
-// DELETE /api/documents/[id] - Delete a document
+// DELETE /api/documents/[id] - Delete a document and its preferences
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -46,6 +47,8 @@ export async function DELETE(
 
     try {
       await fs.unlink(filePath);
+      // Also delete document preferences (history, adjustments, etc.)
+      await deleteDocumentPreferences(id);
       return NextResponse.json({ success: true });
     } catch {
       return NextResponse.json(

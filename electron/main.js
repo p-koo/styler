@@ -79,6 +79,25 @@ function createWindow() {
   });
 }
 
+function getHelperPath() {
+  if (process.platform === "darwin" && !isDev) {
+    // Use the Helper binary which has LSUIElement=true (no dock icon)
+    const appPath = app.getAppPath();
+    // appPath is like /path/to/Styler.app/Contents/Resources/app.asar
+    const contentsPath = path.join(appPath, "..", "..");
+    const helperPath = path.join(
+      contentsPath,
+      "Frameworks",
+      `${app.getName()} Helper.app`,
+      "Contents",
+      "MacOS",
+      `${app.getName()} Helper`
+    );
+    return helperPath;
+  }
+  return process.execPath;
+}
+
 function startNextServer() {
   return new Promise((resolve, reject) => {
     const basePath = isDev
@@ -103,7 +122,8 @@ function startNextServer() {
       ELECTRON_RUN_AS_NODE: "1"
     };
 
-    nextServer = spawn(process.execPath,
+    const executablePath = getHelperPath();
+    nextServer = spawn(executablePath,
       [serverPath], {
       env: nodeEnv,
       cwd: path.join(basePath, ".next", "standalone"),

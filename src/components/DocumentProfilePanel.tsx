@@ -368,14 +368,14 @@ export default function DocumentProfilePanel({
 
   // Auto-generate goals when document loads if none exist
   useEffect(() => {
-    // Only run once after initial load, if no goals exist
-    if (!loading && !autoAnalyzed && !adjustments.documentGoals?.summary && !analyzingGoals) {
+    // Only run once after initial load, if no goals exist AND model is loaded
+    if (!loading && !autoAnalyzed && !adjustments.documentGoals?.summary && !analyzingGoals && selectedModel) {
       setAutoAnalyzed(true);
       // Trigger goal analysis automatically
       handleAnalyzeGoals();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, autoAnalyzed, adjustments.documentGoals?.summary, analyzingGoals]);
+  }, [loading, autoAnalyzed, adjustments.documentGoals?.summary, analyzingGoals, selectedModel]);
 
   // Save edited goals
   const handleSaveGoals = async () => {

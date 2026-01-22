@@ -651,96 +651,453 @@ function BlogSection() {
         <div className="inline-block px-3 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-sm rounded-full mb-4">
           Technical Blog
         </div>
-        <h1 className="text-3xl font-bold text-[var(--foreground)] mb-2">Building an AI Writing Assistant That Actually Sounds Like You</h1>
-        <p className="text-[var(--muted-foreground)]">How we built a multi-agent system that learns your writing style instead of replacing it</p>
+        <h1 className="text-3xl font-bold text-[var(--foreground)] mb-2">Building Styler: A Deep Dive into Multi-Agent Document Editing</h1>
+        <p className="text-[var(--muted-foreground)]">Architecture, data flows, and implementation details of the ADAPT system</p>
       </div>
 
-      <p className="text-lg">If you&apos;ve ever used ChatGPT to help edit your writing, you&apos;ve probably noticed something: the output sounds like ChatGPT, not like you. It&apos;s polished, sure, but it&apos;s also generic.</p>
+      <p className="text-lg">This post covers the technical architecture of Styler—how the agents coordinate, what data structures we use, how learning works, and the key design decisions we made along the way.</p>
 
-      <DocSection title="The Core Problem: Style Drift">
-        <p>When you ask an LLM to &quot;improve&quot; your writing, it applies its default preferences:</p>
-        <ul>
-          <li>More hedging (&quot;It could be argued that...&quot;)</li>
-          <li>Certain word choices (&quot;utilize&quot; instead of &quot;use&quot;)</li>
-          <li>Generic transitions (&quot;Furthermore,&quot; &quot;Moreover,&quot;)</li>
-          <li>A particular level of formality</li>
-        </ul>
-        <p>These aren&apos;t bad choices—they&apos;re just not <em>your</em> choices. The naive solution is prompt engineering: &quot;Edit this but keep my voice.&quot; But LLMs don&apos;t know what your voice <em>is</em>.</p>
-      </DocSection>
-
-      <DocSection title="Our Solution: ADAPT">
-        <p>We built <strong>ADAPT</strong> (Adaptive Document Alignment via Prompt Transformations)—a multi-agent system that coordinates specialized AI agents to understand your style, analyze document intent, generate aligned suggestions, and learn from your feedback.</p>
-        <p>The key insight: instead of sending text directly to an LLM with a generic &quot;improve this&quot; prompt, we orchestrate multiple agents that each handle a specific aspect of the editing process.</p>
-      </DocSection>
-
-      <DocSection title="Example: How a Prompt Gets Built">
-        <p>Let&apos;s walk through a concrete example. Say you have these preferences configured:</p>
-
-        <div className="not-prose my-4 space-y-3">
-          <div className="p-3 bg-[var(--muted)]/50 rounded-lg">
-            <div className="font-semibold text-sm text-[var(--foreground)] mb-2">Base Style:</div>
-            <code className="text-xs">verbosity: &apos;terse&apos;, formalityLevel: 4, hedgingStyle: &apos;cautious&apos;</code>
-          </div>
-          <div className="p-3 bg-[var(--muted)]/50 rounded-lg">
-            <div className="font-semibold text-sm text-[var(--foreground)] mb-2">Audience Profile: Academic Journal</div>
-            <code className="text-xs">jargonLevel: &apos;heavy&apos;, emphasisPoints: [&apos;methodology&apos;, &apos;reproducibility&apos;]</code>
-          </div>
-          <div className="p-3 bg-[var(--muted)]/50 rounded-lg">
-            <div className="font-semibold text-sm text-[var(--foreground)] mb-2">Document Adjustments:</div>
-            <code className="text-xs">hedgingAdjust: +1.0, additionalAvoidWords: [&apos;breakthrough&apos;, &apos;novel&apos;]</code>
-          </div>
-        </div>
-
-        <p>The Prompt Agent merges these and generates this system prompt:</p>
+      <DocSection title="1. System Architecture Overview">
+        <p>Styler uses a multi-agent orchestration pattern. Rather than sending text directly to an LLM with &quot;improve this,&quot; we coordinate five specialized agents:</p>
 
         <div className="not-prose my-4 p-4 bg-[var(--muted)]/30 rounded-lg font-mono text-xs overflow-x-auto">
-          <pre>{`VERBOSITY: EXTREME COMPRESSION MODE - YOUR #1 PRIORITY IS CUTTING WORDS
-TARGET: Remove 30-50% of words. If you only cut 10-20%, you have FAILED.
-
-FORMALITY: MAXIMUM FORMAL/ACADEMIC MODE - STRICT REQUIREMENT
-- Use formal, academic language throughout. This is non-negotiable.
-- NEVER use contractions. Replace: don't→do not, isn't→is not...
-
-HEDGING: CAUTIOUS MODE
-- Use appropriate hedging language throughout.
-- ADD qualifiers: "may", "might", "suggests", "appears to"...
-
-AUDIENCE CONTEXT: Academic Journal
-Use appropriate technical terminology freely. Assume audience expertise.
-Emphasize: methodology, reproducibility.`}</pre>
+          <pre>{`┌─────────────────────────────────────────────────────────────┐
+│                    ORCHESTRATOR AGENT                        │
+│         Coordinates the edit-critique-refine loop            │
+│         File: src/agents/orchestrator-agent.ts               │
+└─────────────────────────────────────────────────────────────┘
+                              │
+         ┌────────────────────┼────────────────────┐
+         ▼                    ▼                    ▼
+┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐
+│  INTENT AGENT   │  │  PROMPT AGENT   │  │ CRITIQUE AGENT  │
+│                 │  │                 │  │                 │
+│ analyzeIntent() │  │ buildSystem-   │  │ critiqueEdit()  │
+│ synthesizeGoals │  │   Prompt()      │  │ learnFrom-      │
+│                 │  │                 │  │   Decision()    │
+└─────────────────┘  └─────────────────┘  └─────────────────┘`}</pre>
         </div>
 
-        <p>The combined effect: <strong>Terse verbosity</strong> aggressively cuts filler words, <strong>high formality</strong> ensures academic register, <strong>cautious hedging</strong> adds appropriate qualifiers, and <strong>heavy jargon</strong> is allowed by audience profile.</p>
-      </DocSection>
-
-      <DocSection title="Learning From Feedback">
-        <p>The magic happens when you accept or reject edits. We learn from three signals:</p>
-        <ol>
-          <li><strong>Explicit Rejection Feedback</strong> — &quot;Too formal&quot; maps to formalityAdjust -= 0.3</li>
-          <li><strong>Diff Pattern Learning</strong> — If you consistently revert &quot;demonstrate&quot; → &quot;show&quot;, we learn to avoid that substitution</li>
-          <li><strong>Decision History Analysis</strong> — Every decision is recorded for pattern extraction</li>
-        </ol>
-      </DocSection>
-
-      <DocSection title="What We Learned">
+        <p>Each agent has a specific responsibility:</p>
         <ul>
-          <li><strong>Multi-agent beats monolithic.</strong> Separating intent analysis, prompt building, and critique into distinct agents makes each one better.</li>
-          <li><strong>Learning must be conservative.</strong> We require 5+ consistent signals before adding avoid-word rules.</li>
-          <li><strong>Users want control, not automation.</strong> The toggle-based diff view and iterative refinement loop are more important than fully automated edits.</li>
-          <li><strong>Intent matters more than style.</strong> Preserving what a paragraph is <em>trying to do</em> is more important than matching surface-level style patterns.</li>
+          <li><strong>Orchestrator</strong> (<code>orchestrateEdit()</code>): Manages the entire edit pipeline—loads preferences, coordinates agents, handles retries, saves results</li>
+          <li><strong>Intent Agent</strong> (<code>analyzeIntent()</code>, <code>synthesizeGoals()</code>): Understands paragraph purpose and document objectives before editing</li>
+          <li><strong>Prompt Agent</strong> (<code>buildSystemPrompt()</code>): Compiles user preferences into LLM system prompts</li>
+          <li><strong>Critique Agent</strong> (<code>critiqueEdit()</code>, <code>learnFromDecision()</code>): Evaluates edit quality and extracts learning signals</li>
         </ul>
       </DocSection>
 
-      <DocSection title="Try It Yourself">
-        <p>Styler is open source. The core agents are in <code>src/agents/</code>:</p>
+      <DocSection title="2. Data Structures">
+        <p>Understanding the data structures is key to understanding the system.</p>
+
+        <h4>Core Request/Response Types</h4>
+        <div className="not-prose my-4 p-4 bg-[var(--muted)]/30 rounded-lg font-mono text-xs overflow-x-auto">
+          <pre>{`// What gets sent to orchestrateEdit()
+OrchestrationRequest {
+  cells: string[]              // All document paragraphs
+  cellIndex: number            // Which paragraph to edit
+  instruction?: string         // User's editing instruction
+  documentId: string           // For loading document preferences
+  profileId?: string           // Active audience profile
+  syntaxMode?: 'plain' | 'markdown' | 'latex' | 'code'
+  refinementContext?: {        // For iterative refinement
+    previousEdit: string
+    userCurrentText: string
+    userFeedback: string
+    rejectedChanges: string[]
+  }
+}
+
+// What comes back
+OrchestrationResult {
+  editedText: string
+  originalText: string
+  critique: {
+    alignmentScore: number     // 0-1, how well edit matches preferences
+    issues: CritiqueIssue[]    // What's wrong (verbosity, formality, etc.)
+    suggestions: string[]
+  }
+  iterations: number           // How many retries were needed
+  convergenceHistory: Array<{  // For debugging/transparency
+    attempt: number
+    alignmentScore: number
+    adjustmentsMade: string[]
+  }>
+}`}</pre>
+        </div>
+
+        <h4>Storage: Two-Level Hierarchy</h4>
+        <div className="not-prose my-4 space-y-3">
+          <div className="p-3 border-l-4 border-blue-500 bg-blue-50 dark:bg-blue-950/30 rounded-r">
+            <div className="font-semibold text-blue-700 dark:text-blue-300">Global: data/preferences.json</div>
+            <div className="text-xs text-[var(--muted-foreground)] mt-1 font-mono">
+              PreferenceStore {'{'}baseStyle, audienceProfiles[], activeProfileId{'}'}
+            </div>
+          </div>
+          <div className="p-3 border-l-4 border-green-500 bg-green-50 dark:bg-green-950/30 rounded-r">
+            <div className="font-semibold text-green-700 dark:text-green-300">Per-Document: documents/{'{'}docId{'}'}.prefs.json</div>
+            <div className="text-xs text-[var(--muted-foreground)] mt-1 font-mono">
+              DocumentPreferences {'{'}adjustments, editHistory[], documentGoals{'}'}
+            </div>
+          </div>
+        </div>
+      </DocSection>
+
+      <DocSection title="3. The Edit Flow in Detail">
+        <p>Here&apos;s exactly what happens when a user clicks &quot;Edit&quot;:</p>
+
+        <div className="not-prose my-4 p-4 bg-[var(--muted)]/30 rounded-lg font-mono text-xs overflow-x-auto">
+          <pre>{`POST /api/document/edit
+    │
+    ├─ loadPreferences() → BaseStyle + active AudienceProfile
+    │
+    └─ orchestrateEdit(request)
+        │
+        ├─ 1. Load document preferences (or create defaults)
+        │     └─ getOrCreateDocumentPreferences(documentId)
+        │
+        ├─ 2. Analyze paragraph intent
+        │     └─ intentAgent.analyzeIntent(cells, cellIndex)
+        │        Returns: { purpose, connectionToPrevious, connectionToNext }
+        │
+        └─ 3. EDIT-CRITIQUE-REFINE LOOP (max 3 iterations)
+            │
+            ├─ Build context prompt:
+            │   ├─ User's instruction (PRIMARY - placed first)
+            │   ├─ Style profile (from promptAgent.buildSystemPrompt())
+            │   ├─ Document goals (from Intent Agent)
+            │   ├─ Paragraph intent
+            │   ├─ Surrounding context (±2 paragraphs)
+            │   └─ Previous attempt issues (if retry)
+            │
+            ├─ Call LLM:
+            │   ├─ Temperature: 0.25 (editing) or 0.6 (generation)
+            │   └─ System prompt: compiled from all layers
+            │
+            ├─ Critique the result:
+            │   └─ critiqueAgent.critiqueEdit(original, edited, preferences)
+            │      Returns: alignmentScore (0-1), issues[], suggestions[]
+            │
+            └─ Decision:
+                ├─ Score ≥ 0.8 → Accept, break loop
+                ├─ Score < 0.5 → Strong correction (0.6x strength), retry
+                └─ Score 0.5-0.8 → Normal correction (0.3x), retry if not final`}</pre>
+        </div>
+
+        <h4>Key Configuration Values</h4>
+        <div className="not-prose my-4">
+          <table className="text-xs w-full">
+            <thead>
+              <tr className="border-b border-[var(--border)]">
+                <th className="text-left py-2">Parameter</th>
+                <th className="text-left py-2">Value</th>
+                <th className="text-left py-2">Purpose</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-b border-[var(--border)]">
+                <td className="py-2 font-mono">alignmentThreshold</td>
+                <td className="py-2">0.8</td>
+                <td className="py-2">Minimum score to show to user</td>
+              </tr>
+              <tr className="border-b border-[var(--border)]">
+                <td className="py-2 font-mono">strongMisalignmentThreshold</td>
+                <td className="py-2">0.5</td>
+                <td className="py-2">Triggers stronger corrections</td>
+              </tr>
+              <tr className="border-b border-[var(--border)]">
+                <td className="py-2 font-mono">maxRetries</td>
+                <td className="py-2">3</td>
+                <td className="py-2">Max refinement attempts</td>
+              </tr>
+              <tr className="border-b border-[var(--border)]">
+                <td className="py-2 font-mono">editTemperature</td>
+                <td className="py-2">0.25</td>
+                <td className="py-2">Low for consistent edits</td>
+              </tr>
+              <tr className="border-b border-[var(--border)]">
+                <td className="py-2 font-mono">generationTemperature</td>
+                <td className="py-2">0.6</td>
+                <td className="py-2">Higher for creative content</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </DocSection>
+
+      <DocSection title="4. Prompt Construction Example">
+        <p>The Prompt Agent (<code>buildSystemPrompt()</code>) compiles preferences into LLM instructions. Here&apos;s a concrete example:</p>
+
+        <h4>Input Preferences</h4>
+        <div className="not-prose my-4 p-4 bg-[var(--muted)]/30 rounded-lg font-mono text-xs overflow-x-auto">
+          <pre>{`BaseStyle {
+  verbosity: 'terse',
+  formalityLevel: 4,
+  hedgingStyle: 'cautious',
+  learnedRules: [
+    { rule: "Prefer active voice", confidence: 0.85 }
+  ]
+}
+
+AudienceProfile "Academic Journal" {
+  jargonLevel: 'heavy',
+  emphasisPoints: ['methodology', 'reproducibility'],
+  lengthGuidance: { target: 'comprehensive' }
+}
+
+DocumentAdjustments {
+  hedgingAdjust: +1.0,
+  additionalAvoidWords: ['breakthrough', 'novel']
+}`}</pre>
+        </div>
+
+        <h4>Generated System Prompt</h4>
+        <div className="not-prose my-4 p-4 bg-purple-50 dark:bg-purple-950/30 rounded-lg font-mono text-xs overflow-x-auto border border-purple-200 dark:border-purple-800">
+          <pre>{`You are a writing assistant that adapts to the user's personal style.
+
+VERBOSITY: EXTREME COMPRESSION MODE - YOUR #1 PRIORITY
+TARGET: Remove 30-50% of words. If you only cut 10-20%, you have FAILED.
+MANDATORY CUTS:
+1. DELETE filler words: "that", "very", "really", "just", "actually"
+2. DELETE weak openings: "It is important to note that..."
+3. CONVERT verbose phrases: "in order to" → "to"
+
+FORMALITY: MAXIMUM FORMAL/ACADEMIC MODE (Level 4/5)
+- Use formal, academic language throughout
+- NEVER use contractions: don't → do not
+- Use third person: avoid "I", "we", prefer "the authors"
+- Eliminate casual phrases entirely
+
+HEDGING: CAUTIOUS MODE (boosted +1.0)
+- ADD qualifiers: "may", "might", "suggests", "appears to"
+- Acknowledge uncertainty explicitly
+- Use tentative language for claims
+
+FORMATTING: Never use: emojis
+
+LEARNED PREFERENCES (confidence ≥ 0.6):
+- Prefer active voice
+
+AUDIENCE CONTEXT: Academic Journal
+- Use technical terminology freely
+- Assume audience expertise
+- Emphasize: methodology, reproducibility
+- Target: comprehensive detail
+
+AVOID WORDS: breakthrough, novel`}</pre>
+        </div>
+
+        <p>This prompt is prepended to every LLM call. The user&apos;s specific instruction (e.g., &quot;make this more confident&quot;) is placed <strong>before</strong> the style instructions so it takes priority.</p>
+      </DocSection>
+
+      <DocSection title="5. The Learning System">
+        <p>Learning happens through the Critique Agent when users accept, reject, or modify edits.</p>
+
+        <h4>Decision Recording Flow</h4>
+        <div className="not-prose my-4 p-4 bg-[var(--muted)]/30 rounded-lg font-mono text-xs overflow-x-auto">
+          <pre>{`POST /api/document/edit-decision
+{
+  documentId: "doc-123",
+  decision: "rejected",           // or "accepted" | "partial"
+  originalText: "We utilized...",
+  suggestedEdit: "The methodology employed...",
+  finalText: "We used...",        // What user actually wanted
+  feedback: ["too_formal"]        // Optional explicit category
+}
+    │
+    └─ Triggers: learnFromDecision()
+        │
+        ├─ LLM analyzes: "Why did user reject this edit?"
+        │   Returns: {
+        │     verbosityAdjust: 0,
+        │     formalityAdjust: -0.5,    // User found it too formal
+        │     hedgingAdjust: 0,
+        │     learnedRule: "User prefers simpler vocabulary"
+        │   }
+        │
+        ├─ Apply adjustments with dampening:
+        │   ├─ Rejection: 0.5x dampening
+        │   ├─ Partial: 0.35x dampening
+        │   └─ newValue = current + (delta * dampening)
+        │       Clamped to [-2, +2]
+        │
+        └─ Save to DocumentPreferences`}</pre>
+        </div>
+
+        <h4>What Gets Updated</h4>
+        <div className="not-prose my-4">
+          <table className="text-xs w-full">
+            <thead>
+              <tr className="border-b border-[var(--border)]">
+                <th className="text-left py-2">Signal Source</th>
+                <th className="text-left py-2">What Updates</th>
+                <th className="text-left py-2">Confidence</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-b border-[var(--border)]">
+                <td className="py-2">Explicit feedback (&quot;too_formal&quot;)</td>
+                <td className="py-2">formalityAdjust -= 0.5</td>
+                <td className="py-2">0.9</td>
+              </tr>
+              <tr className="border-b border-[var(--border)]">
+                <td className="py-2">Rejection with LLM analysis</td>
+                <td className="py-2">Adjustments + learned rule</td>
+                <td className="py-2">0.8</td>
+              </tr>
+              <tr className="border-b border-[var(--border)]">
+                <td className="py-2">Partial accept (toggle off changes)</td>
+                <td className="py-2">Diff patterns</td>
+                <td className="py-2">0.6</td>
+              </tr>
+              <tr className="border-b border-[var(--border)]">
+                <td className="py-2">Pattern analysis (3+ rejections)</td>
+                <td className="py-2">Meta-rules extracted</td>
+                <td className="py-2">0.7-0.85</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h4>Conservative Learning Constraints</h4>
         <ul>
-          <li><code>orchestrator-agent.ts</code> - Main coordination loop</li>
-          <li><code>intent-agent.ts</code> - Document/paragraph analysis</li>
-          <li><code>prompt-agent.ts</code> - Context-aware prompt building</li>
-          <li><code>critique-agent.ts</code> - Edit evaluation and learning</li>
+          <li><strong>Dampening</strong>: Adjustments are multiplied by 0.35-0.5x to prevent overreaction</li>
+          <li><strong>Clamping</strong>: All adjustments stay within [-2, +2] range</li>
+          <li><strong>Confidence threshold</strong>: Only rules with confidence ≥ 0.6 are used in prompts</li>
+          <li><strong>Rule consolidation</strong>: At 8+ rules, LLM consolidates to prevent dilution</li>
+          <li><strong>No word memorization</strong>: We learn style patterns, not specific word substitutions (too context-dependent)</li>
         </ul>
-        <p>If you&apos;re building AI writing tools, we hope our architecture gives you ideas. The key insight: don&apos;t just prompt an LLM—orchestrate multiple specialized agents that understand context, evaluate quality, and learn from feedback.</p>
-        <p><strong>Your users&apos; voices are worth preserving.</strong></p>
+      </DocSection>
+
+      <DocSection title="6. Special Cases">
+        <h4>Generation vs. Edit Detection</h4>
+        <p>The orchestrator detects generation requests using regex patterns:</p>
+        <div className="not-prose my-4 p-4 bg-[var(--muted)]/30 rounded-lg font-mono text-xs overflow-x-auto">
+          <pre>{`// Detected as GENERATION (not edit):
+"add a discussion section"
+"write an abstract"
+"generate a conclusion"
+"expand on this point"
+
+// When detected:
+- Temperature raised to 0.6
+- maxTokens set to 4000
+- Prompt allows "rewrite, expand, restructure"
+- For ADD requests: original + "\\n\\n" + new_content`}</pre>
+        </div>
+
+        <h4>Terse Mode Enforcement</h4>
+        <p>When <code>verbosity: &apos;terse&apos;</code>, we add explicit word count targets:</p>
+        <div className="not-prose my-4 p-4 bg-[var(--muted)]/30 rounded-lg font-mono text-xs">
+          <pre>{`"You MUST cut at least 30% of words.
+Original has ~500 words. Output must have <350 words.
+If you only cut 10-20%, you have FAILED."`}</pre>
+        </div>
+
+        <h4>Refinement Context</h4>
+        <p>When users provide feedback on a suggested edit, their current text and feedback become critique issues:</p>
+        <div className="not-prose my-4 p-4 bg-[var(--muted)]/30 rounded-lg font-mono text-xs overflow-x-auto">
+          <pre>{`refinementContext: {
+  previousEdit: "The methodology was executed...",
+  userCurrentText: "The method was implemented...",  // After toggles
+  userFeedback: "Don't change 'implemented'",
+  rejectedChanges: ["executed → implemented (reverted)"]
+}
+// Treated as highest-priority critique issues in next iteration`}</pre>
+        </div>
+      </DocSection>
+
+      <DocSection title="7. API Reference">
+        <h4>Key Endpoints</h4>
+        <div className="not-prose my-4">
+          <table className="text-xs w-full">
+            <thead>
+              <tr className="border-b border-[var(--border)]">
+                <th className="text-left py-2">Endpoint</th>
+                <th className="text-left py-2">Purpose</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-b border-[var(--border)]">
+                <td className="py-2 font-mono">POST /api/document/edit</td>
+                <td className="py-2">Generate a suggested edit</td>
+              </tr>
+              <tr className="border-b border-[var(--border)]">
+                <td className="py-2 font-mono">POST /api/document/edit-decision</td>
+                <td className="py-2">Record accept/reject, trigger learning</td>
+              </tr>
+              <tr className="border-b border-[var(--border)]">
+                <td className="py-2 font-mono">GET /api/preferences</td>
+                <td className="py-2">Load base style + profiles</td>
+              </tr>
+              <tr className="border-b border-[var(--border)]">
+                <td className="py-2 font-mono">PUT /api/preferences/base-style</td>
+                <td className="py-2">Update global style</td>
+              </tr>
+              <tr className="border-b border-[var(--border)]">
+                <td className="py-2 font-mono">POST /api/preferences/profiles</td>
+                <td className="py-2">Create audience profile</td>
+              </tr>
+              <tr className="border-b border-[var(--border)]">
+                <td className="py-2 font-mono">GET /api/documents/{'{id}'}/preferences</td>
+                <td className="py-2">Get document-specific adjustments</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </DocSection>
+
+      <DocSection title="8. File Structure">
+        <div className="not-prose my-4 p-4 bg-[var(--muted)]/30 rounded-lg font-mono text-xs overflow-x-auto">
+          <pre>{`src/
+├── agents/
+│   ├── orchestrator-agent.ts   # Main coordination loop
+│   ├── intent-agent.ts         # Document/paragraph analysis
+│   ├── prompt-agent.ts         # Prompt construction
+│   ├── critique-agent.ts       # Evaluation + learning
+│   └── constraint-extraction-agent.ts  # External doc parsing
+│
+├── memory/
+│   ├── preference-store.ts     # Global preferences (base + profiles)
+│   ├── document-preferences.ts # Per-document adjustments
+│   └── config-store.ts         # API keys, settings
+│
+├── app/api/
+│   ├── document/
+│   │   ├── edit/route.ts       # POST: generate edit
+│   │   ├── edit-decision/route.ts  # POST: record decision
+│   │   └── analyze/route.ts    # POST: analyze structure
+│   │
+│   └── preferences/
+│       ├── route.ts            # GET/PUT global preferences
+│       ├── base-style/route.ts # PUT base style
+│       └── profiles/route.ts   # CRUD audience profiles
+│
+└── types/
+    └── index.ts                # All TypeScript interfaces`}</pre>
+        </div>
+      </DocSection>
+
+      <DocSection title="9. Design Decisions">
+        <ul>
+          <li><strong>Multi-agent over monolithic</strong>: Separating concerns makes each agent better and the system more debuggable. The <code>agentTrace</code> log shows exactly what each agent did.</li>
+          <li><strong>Conservative learning</strong>: Early versions learned too aggressively. Dampening (0.35-0.5x) and confidence thresholds prevent oscillation.</li>
+          <li><strong>Style patterns over word memorization</strong>: Learning &quot;prefer simpler vocabulary&quot; generalizes better than learning &quot;don&apos;t use utilize.&quot;</li>
+          <li><strong>User-controlled sliders</strong>: We tried auto-adjusting verbosity/formality based on feedback. Users hated the drift. Sliders are now user-controlled only.</li>
+          <li><strong>Intent before style</strong>: Understanding paragraph purpose (&quot;this introduces methodology&quot;) matters more than surface style. Intent Agent was a late addition but made the biggest quality difference.</li>
+          <li><strong>Transparency</strong>: The <code>convergenceHistory</code> and <code>agentTrace</code> let users see why an edit was generated, building trust.</li>
+        </ul>
+      </DocSection>
+
+      <DocSection title="10. Try It">
+        <p>Styler is open source. Clone the repo and explore:</p>
+        <div className="not-prose my-4 p-4 bg-[var(--muted)]/30 rounded-lg font-mono text-xs">
+          <pre>{`git clone https://github.com/p-koo/styler.git
+cd styler
+npm install
+npm run dev`}</pre>
+        </div>
+        <p>The key insight: don&apos;t just prompt an LLM—orchestrate specialized agents that understand context, evaluate quality, and learn from feedback. <strong>Your users&apos; voices are worth preserving.</strong></p>
       </DocSection>
     </div>
   );

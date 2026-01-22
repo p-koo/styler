@@ -5,6 +5,8 @@ import type { DocumentAdjustments, AudienceProfile, LearnedRule, DocumentGoals }
 
 interface DocumentProfilePanelProps {
   documentId: string;
+  documentContent?: string;
+  documentTitle?: string;
   baseProfileName?: string;
   profiles: AudienceProfile[];
   onClose?: () => void;
@@ -28,6 +30,8 @@ type TabType = 'style' | 'guidance' | 'goals' | 'import';
  */
 export default function DocumentProfilePanel({
   documentId,
+  documentContent,
+  documentTitle,
   baseProfileName,
   profiles,
   onClose,
@@ -338,7 +342,11 @@ export default function DocumentProfilePanel({
       const res = await fetch(`/api/documents/${documentId}/goals`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: selectedModel }),
+        body: JSON.stringify({
+          model: selectedModel,
+          content: documentContent,
+          title: documentTitle,
+        }),
       });
       const data = await res.json();
 

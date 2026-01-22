@@ -21,36 +21,43 @@ export async function POST(request: NextRequest, context: RouteContext) {
   try {
     const { id } = await context.params;
 
-    // Parse request body for model
+    // Parse request body
     let model: string | undefined;
+    let clientContent: string | undefined;
+    let clientTitle: string | undefined;
     try {
       const body = await request.json();
       model = body.model;
+      clientContent = body.content;
+      clientTitle = body.title;
     } catch {
       // No body or invalid JSON is fine
     }
 
-    // Load the document
-    const filePath = path.join(DOCUMENTS_DIR, `${id}.json`);
-    let documentContent = '';
-    let documentTitle = 'Untitled';
+    // Load the document from filesystem or use client-provided content
+    let documentContent = clientContent || '';
+    let documentTitle = clientTitle || 'Untitled';
     let documentType = '';
 
-    try {
-      const content = await fs.readFile(filePath, 'utf-8');
-      const doc = JSON.parse(content);
-      documentTitle = doc.title || 'Untitled';
-      documentType = doc.structure?.documentType || '';
+    // Try to load from filesystem if no client content provided
+    if (!documentContent) {
+      const filePath = path.join(DOCUMENTS_DIR, `${id}.json`);
+      try {
+        const content = await fs.readFile(filePath, 'utf-8');
+        const doc = JSON.parse(content);
+        documentTitle = doc.title || 'Untitled';
+        documentType = doc.structure?.documentType || '';
 
-      // Combine all cells into document content
-      if (doc.cells && Array.isArray(doc.cells)) {
-        documentContent = doc.cells.map((c: { content: string }) => c.content).join('\n\n');
+        // Combine all cells into document content
+        if (doc.cells && Array.isArray(doc.cells)) {
+          documentContent = doc.cells.map((c: { content: string }) => c.content).join('\n\n');
+        }
+      } catch {
+        return NextResponse.json(
+          { error: 'Document not found. Please save the document first or provide content.' },
+          { status: 404 }
+        );
       }
-    } catch {
-      return NextResponse.json(
-        { error: 'Document not found' },
-        { status: 404 }
-      );
     }
 
     if (!documentContent || documentContent.trim().length < 50) {

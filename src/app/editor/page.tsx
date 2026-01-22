@@ -4070,6 +4070,8 @@ export default function EditorPage() {
           <aside className="w-80 border-l border-[var(--border)] bg-[var(--background)] flex flex-col overflow-hidden">
             <DocumentProfilePanel
               documentId={document.id}
+              documentContent={document.cells.map(c => c.content).join('\n\n')}
+              documentTitle={document.title}
               baseProfileName={profiles.find(p => p.id === activeProfile)?.name}
               profiles={profiles}
               onClose={() => setShowDocProfile(false)}

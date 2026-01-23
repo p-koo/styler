@@ -22,11 +22,12 @@ import { createProvider, getDefaultProviderConfig } from '@/providers/base';
 import { buildSystemPrompt } from './prompt-agent';
 
 // Default adjustments for new documents
+// Style sliders default to 0 (50%) and are USER-EDIT ONLY - never auto-adjusted
 export const DEFAULT_ADJUSTMENTS: DocumentAdjustments = {
-  verbosityAdjust: 0,
-  formalityAdjust: 0,
-  hedgingAdjust: 0,
-  styleUserModified: undefined, // Not user-modified by default - can be set by constraints
+  verbosityAdjust: 0,    // 0 = 50% (neutral), range -2 to +2
+  formalityAdjust: 0,    // 0 = 50% (neutral), range -2 to +2
+  hedgingAdjust: 0,      // 0 = 50% (neutral), range -2 to +2
+  styleUserModified: undefined, // Tracks which sliders user has manually adjusted
   additionalAvoidWords: [],
   additionalPreferWords: {},
   additionalFramingGuidance: [],

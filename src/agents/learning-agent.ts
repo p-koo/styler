@@ -169,24 +169,14 @@ Return ONLY the JSON object.`;
       }
     }
 
-    // Only learn STYLE adjustments, not word preferences
-    // Word preferences lead to overfitting - memorizing context-specific choices
+    // Style sliders (verbosity, formality, hedging) are USER-EDIT ONLY.
+    // Do NOT auto-adjust them from learning - this causes unwanted style drift.
+    // Only learned rules are updated from user feedback.
     const newAdjustments: DocumentAdjustments = {
-      verbosityAdjust: clamp(
-        currentAdj.verbosityAdjust + (parsed.verbosityAdjust || 0) * dampening,
-        -2,
-        2
-      ),
-      formalityAdjust: clamp(
-        currentAdj.formalityAdjust + (parsed.formalityAdjust || 0) * dampening,
-        -2,
-        2
-      ),
-      hedgingAdjust: clamp(
-        currentAdj.hedgingAdjust + (parsed.hedgingAdjust || 0) * dampening,
-        -2,
-        2
-      ),
+      // Preserve user's style settings - no auto-adjustment
+      verbosityAdjust: currentAdj.verbosityAdjust,
+      formalityAdjust: currentAdj.formalityAdjust,
+      hedgingAdjust: currentAdj.hedgingAdjust,
       // Keep existing avoid/prefer words but don't add new ones from LLM inference
       // Only explicit feedback or very high-confidence diff patterns should add words
       additionalAvoidWords: currentAdj.additionalAvoidWords,

@@ -120,37 +120,20 @@ export async function extractConstraints(
 
 /**
  * Merge extracted constraints into existing document adjustments
- * Respects user-modified styles - only applies constraint styles if user hasn't manually set them
+ * Style sliders (verbosity, formality, hedging) are USER-EDIT ONLY - never auto-modified.
+ * Only rules, avoid words, prefer words, and framing guidance are merged from constraints.
  */
 export function mergeConstraintsIntoAdjustments(
   existing: DocumentAdjustments,
   constraints: ExtractedConstraints
 ): DocumentAdjustments {
-  const userModified = existing.styleUserModified || {};
-
-  // Only apply constraint-derived style if user hasn't manually modified it
-  const verbosityAdjust = userModified.verbosity
-    ? existing.verbosityAdjust  // Keep user's setting
-    : existing.verbosityAdjust !== 0
-      ? (existing.verbosityAdjust + constraints.verbosityAdjust) / 2
-      : constraints.verbosityAdjust;
-
-  const formalityAdjust = userModified.formality
-    ? existing.formalityAdjust  // Keep user's setting
-    : existing.formalityAdjust !== 0
-      ? (existing.formalityAdjust + constraints.formalityAdjust) / 2
-      : constraints.formalityAdjust;
-
-  const hedgingAdjust = userModified.hedging
-    ? existing.hedgingAdjust  // Keep user's setting
-    : existing.hedgingAdjust !== 0
-      ? (existing.hedgingAdjust + constraints.hedgingAdjust) / 2
-      : constraints.hedgingAdjust;
+  // Style sliders are USER-EDIT ONLY - preserve existing values, never auto-adjust
+  // Defaults are 0 (50%) and only change when user explicitly moves the sliders
 
   return {
-    verbosityAdjust,
-    formalityAdjust,
-    hedgingAdjust,
+    verbosityAdjust: existing.verbosityAdjust,
+    formalityAdjust: existing.formalityAdjust,
+    hedgingAdjust: existing.hedgingAdjust,
     styleUserModified: existing.styleUserModified, // Preserve user-modified flags
     additionalAvoidWords: [
       ...new Set([...existing.additionalAvoidWords, ...constraints.avoidWords]),

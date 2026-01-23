@@ -177,6 +177,11 @@ export function useTextSelection(options: UseTextSelectionOptions = {}) {
           return;
         }
 
+        // Don't clear selection if locked (edit in progress)
+        if (isLocked) {
+          return;
+        }
+
         const newSelection = checkSelection();
         setSelection(newSelection);
       }, 10);

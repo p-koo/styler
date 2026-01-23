@@ -458,3 +458,156 @@ export interface SavedDocumentWithPreferences {
   createdAt: string;
   updatedAt: string;
 }
+
+// ========================================
+// Structure Analysis Types
+// ========================================
+
+// Types of structural issues that can be detected
+export type StructureIssueType =
+  // Flow issues
+  | 'weak_transition'
+  | 'argument_order'
+  | 'buried_lead'
+  | 'missing_conclusion'
+  | 'missing_introduction'
+  | 'pacing'
+  // Logic issues
+  | 'logical_gap'
+  | 'logical_inconsistency'
+  | 'unsupported_claim'
+  | 'circular_reasoning'
+  | 'non_sequitur'
+  // Content quality issues
+  | 'vague_language'
+  | 'imprecise_claim'
+  | 'overstatement'
+  | 'unclear_antecedent'
+  // Redundancy issues
+  | 'redundancy'
+  | 'verbose_passage'
+  | 'tangent'
+  | 'unnecessary_content';
+
+// Severity of structural issues
+export type StructureIssueSeverity = 'low' | 'medium' | 'high';
+
+// A structural issue found in the document
+export interface StructureIssue {
+  id: string;
+  type: StructureIssueType;
+  severity: StructureIssueSeverity;
+  description: string;
+  affectedCells: number[]; // Indices of cells involved
+}
+
+// Types of structural proposals
+export type StructureProposalType =
+  | 'reorder'
+  | 'merge'
+  | 'split'
+  | 'add'
+  | 'remove'
+  | 'transition'
+  | 'condense'  // Tighten content while preserving ideas
+  | 'clarify';  // Make vague content more precise
+
+// Priority of proposals
+export type StructureProposalPriority = 'low' | 'medium' | 'high';
+
+// Base interface for all proposals
+export interface StructureProposalBase {
+  id: string;
+  type: StructureProposalType;
+  priority: StructureProposalPriority;
+  description: string;
+  rationale: string;
+}
+
+// Reorder proposal - move cells to a new position
+export interface ReorderProposal extends StructureProposalBase {
+  type: 'reorder';
+  sourceCells: number[]; // Indices of cells to move
+  targetPosition: number; // Index to move to (before this index)
+}
+
+// Merge proposal - combine multiple cells into one
+export interface MergeProposal extends StructureProposalBase {
+  type: 'merge';
+  cellsToMerge: number[]; // Indices of cells to merge
+  mergedContent: string; // The combined content
+}
+
+// Split proposal - break one cell into multiple
+export interface SplitProposal extends StructureProposalBase {
+  type: 'split';
+  cellToSplit: number; // Index of cell to split
+  splitContent: string[]; // The split pieces
+}
+
+// Add proposal - insert a new cell
+export interface AddProposal extends StructureProposalBase {
+  type: 'add';
+  insertPosition: number; // Index to insert at (before this index)
+  newContent: string; // Content for the new cell
+}
+
+// Remove proposal - delete a cell
+export interface RemoveProposal extends StructureProposalBase {
+  type: 'remove';
+  cellToRemove: number; // Index of cell to remove
+}
+
+// Transition proposal - add connecting text between cells
+export interface TransitionProposal extends StructureProposalBase {
+  type: 'transition';
+  betweenCells: [number, number]; // Indices of cells to connect
+  transitionText: string; // The transition content to add
+}
+
+// Condense proposal - tighten content while preserving ideas
+export interface CondenseProposal extends StructureProposalBase {
+  type: 'condense';
+  cellToCondense: number; // Index of cell to condense
+  condensedContent: string; // The tightened version
+  removedElements: string[]; // What was removed (for transparency)
+}
+
+// Clarify proposal - make vague content more precise
+export interface ClarifyProposal extends StructureProposalBase {
+  type: 'clarify';
+  cellToClarify: number; // Index of cell to clarify
+  clarifiedContent: string; // The clearer version
+  clarifications: string[]; // What was made more precise
+}
+
+// Union type for all proposal types
+export type StructureProposal =
+  | ReorderProposal
+  | MergeProposal
+  | SplitProposal
+  | AddProposal
+  | RemoveProposal
+  | TransitionProposal
+  | CondenseProposal
+  | ClarifyProposal;
+
+// Full analysis result from structure agent
+export interface StructureAnalysis {
+  overallScore: number; // 0-100 combined score
+  logicScore: number; // 0-100 logical coherence
+  clarityScore: number; // 0-100 precision and clarity
+  flowScore: number; // 0-100 structural flow
+  documentSummary: string; // Brief description of argument and presentation
+  issues: StructureIssue[];
+  proposals: StructureProposal[];
+  analyzedAt: string;
+}
+
+// State for the Structure panel (for persistence)
+export interface StructurePanelState {
+  scope: 'document' | 'selection';
+  lastAnalysis: StructureAnalysis | null;
+  selectedProposals: string[]; // IDs of selected proposals
+  expandedProposals: string[]; // IDs of expanded proposals (showing preview)
+}

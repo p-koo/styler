@@ -9,6 +9,8 @@ import EditInsights from '@/components/EditInsights';
 import AgentVisualization from '@/components/AgentVisualization';
 import DocumentProfilePanel from '@/components/DocumentProfilePanel';
 import FeedbackPanel, { type FeedbackPanelState, DEFAULT_FEEDBACK_STATE } from '@/components/FeedbackPanel';
+import StructurePanel, { DEFAULT_STRUCTURE_STATE } from '@/components/StructurePanel';
+import type { StructurePanelState, StructureProposal } from '@/types';
 import SyntaxHighlighter, { type HighlightMode } from '@/components/SyntaxHighlighter';
 import ApiKeyWarning from '@/components/ApiKeyWarning';
 import SelectionEditPopover from '@/components/SelectionEditPopover';
@@ -181,7 +183,8 @@ export default function EditorPage() {
   const [showNavMenu, setShowNavMenu] = useState(false); // Navigation dropdown
   const [showFeedbackPanel, setShowFeedbackPanel] = useState(true); // Edit panel - visible by default
   const [feedbackStates, setFeedbackStates] = useState<Record<string, FeedbackPanelState>>({}); // Per-document feedback states
-  const [editMode, setEditMode] = useState<'vibe' | 'styler'>('styler'); // Active tab in edit panel
+  const [structureStates, setStructureStates] = useState<Record<string, StructurePanelState>>({}); // Per-document structure states
+  const [editMode, setEditMode] = useState<'styler' | 'structure' | 'vibe'>('styler'); // Active tab in edit panel
   const [selectedStylerTemplates, setSelectedStylerTemplates] = useState<string[]>([]); // Multi-select Styler templates
   const [showNewDocModal, setShowNewDocModal] = useState(false); // New document creation modal
   const [newDocMode, setNewDocMode] = useState<'blank' | 'paste' | 'generate'>('blank'); // How to start new doc
@@ -787,6 +790,164 @@ export default function EditorPage() {
     if (!document?.id) return;
     setFeedbackStates(prev => ({ ...prev, [document.id]: state }));
   }, [document?.id]);
+
+  // Handle structure panel state changes - memoized to prevent infinite loops
+  const handleStructureStateChange = useCallback((state: StructurePanelState) => {
+    if (!document?.id) return;
+    setStructureStates(prev => ({ ...prev, [document.id]: state }));
+  }, [document?.id]);
+
+  // Apply structure proposals to the document
+  const handleApplyStructureProposals = useCallback((proposals: StructureProposal[]) => {
+    if (!document) return;
+
+    // Sort proposals by type priority: remove first (to get indices right), then others
+    // Actually, we need to apply them in a way that doesn't break indices
+    // For now, apply one at a time and recalculate
+
+    setDocument(prev => {
+      if (!prev) return null;
+
+      let cells = [...prev.cells];
+
+      // Process proposals in reverse order of position to avoid index shifting issues
+      // Group by type for cleaner processing
+      const sorted = [...proposals].sort((a, b) => {
+        // Process in order: clarify/condense first (content changes), then structural changes
+        const typeOrder: Record<StructureProposal['type'], number> = {
+          remove: 7,
+          reorder: 6,
+          split: 5,
+          merge: 4,
+          add: 3,
+          transition: 2,
+          condense: 1,
+          clarify: 0,
+        };
+        return typeOrder[a.type] - typeOrder[b.type];
+      });
+
+      for (const proposal of sorted) {
+        switch (proposal.type) {
+          case 'add': {
+            const newCell = {
+              id: `para-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+              index: proposal.insertPosition,
+              content: proposal.newContent,
+              type: 'cell' as const,
+            };
+            cells.splice(proposal.insertPosition, 0, newCell);
+            // Reindex
+            cells = cells.map((c, i) => ({ ...c, index: i }));
+            break;
+          }
+          case 'transition': {
+            // Add transition after the first cell
+            const [afterIndex] = proposal.betweenCells;
+            const newCell = {
+              id: `para-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+              index: afterIndex + 1,
+              content: proposal.transitionText,
+              type: 'cell' as const,
+            };
+            cells.splice(afterIndex + 1, 0, newCell);
+            // Reindex
+            cells = cells.map((c, i) => ({ ...c, index: i }));
+            break;
+          }
+          case 'merge': {
+            if (proposal.cellsToMerge.length < 2) break;
+            const sortedIndices = [...proposal.cellsToMerge].sort((a, b) => a - b);
+            const firstIdx = sortedIndices[0];
+            // Replace first cell with merged content
+            cells[firstIdx] = {
+              ...cells[firstIdx],
+              content: proposal.mergedContent,
+            };
+            // Remove other cells (in reverse order to preserve indices)
+            for (let i = sortedIndices.length - 1; i > 0; i--) {
+              cells.splice(sortedIndices[i], 1);
+            }
+            // Reindex
+            cells = cells.map((c, i) => ({ ...c, index: i }));
+            break;
+          }
+          case 'split': {
+            const idx = proposal.cellToSplit;
+            if (idx < 0 || idx >= cells.length) break;
+            const originalCell = cells[idx];
+            const newCells = proposal.splitContent.map((content, i) => ({
+              id: `para-${Date.now()}-${i}-${Math.random().toString(36).slice(2)}`,
+              index: idx + i,
+              content,
+              type: originalCell.type || ('cell' as const),
+            }));
+            cells.splice(idx, 1, ...newCells);
+            // Reindex
+            cells = cells.map((c, i) => ({ ...c, index: i }));
+            break;
+          }
+          case 'reorder': {
+            const { sourceCells, targetPosition } = proposal;
+            if (sourceCells.length === 0) break;
+            // Extract cells to move
+            const sortedSources = [...sourceCells].sort((a, b) => b - a); // Reverse order
+            const movedCells: typeof cells = [];
+            for (const idx of sortedSources) {
+              if (idx >= 0 && idx < cells.length) {
+                movedCells.unshift(cells[idx]);
+                cells.splice(idx, 1);
+              }
+            }
+            // Calculate adjusted target position
+            let adjustedTarget = targetPosition;
+            for (const idx of sourceCells) {
+              if (idx < targetPosition) adjustedTarget--;
+            }
+            // Insert at target
+            cells.splice(adjustedTarget, 0, ...movedCells);
+            // Reindex
+            cells = cells.map((c, i) => ({ ...c, index: i }));
+            break;
+          }
+          case 'remove': {
+            const idx = proposal.cellToRemove;
+            if (idx >= 0 && idx < cells.length) {
+              cells.splice(idx, 1);
+              // Reindex
+              cells = cells.map((c, i) => ({ ...c, index: i }));
+            }
+            break;
+          }
+          case 'condense': {
+            const idx = proposal.cellToCondense;
+            if (idx >= 0 && idx < cells.length && proposal.condensedContent) {
+              cells[idx] = {
+                ...cells[idx],
+                content: proposal.condensedContent,
+              };
+            }
+            break;
+          }
+          case 'clarify': {
+            const idx = proposal.cellToClarify;
+            if (idx >= 0 && idx < cells.length && proposal.clarifiedContent) {
+              cells[idx] = {
+                ...cells[idx],
+                content: proposal.clarifiedContent,
+              };
+            }
+            break;
+          }
+        }
+      }
+
+      return { ...prev, cells };
+    });
+
+    // Clear selection after applying
+    setSelectedCells(new Set());
+  }, [document]);
 
   // Analyze document structure
   const analyzeDocument = useCallback(async (cells: string[]) => {
@@ -3788,7 +3949,17 @@ export default function EditorPage() {
                       : 'border-transparent text-[var(--muted-foreground)] hover:text-[var(--foreground)]'
                   }`}
                 >
-                  🎨 Styler Edit
+                  🎨 Styler
+                </button>
+                <button
+                  onClick={() => setEditMode('structure')}
+                  className={`flex-1 py-2 text-sm font-medium border-b-2 transition-colors ${
+                    editMode === 'structure'
+                      ? 'border-teal-500 text-teal-600'
+                      : 'border-transparent text-[var(--muted-foreground)] hover:text-[var(--foreground)]'
+                  }`}
+                >
+                  🏗️ Structure
                 </button>
                 <button
                   onClick={() => {
@@ -3801,7 +3972,7 @@ export default function EditorPage() {
                       : 'border-transparent text-[var(--muted-foreground)] hover:text-[var(--foreground)]'
                   }`}
                 >
-                  ✨ Vibe Edit
+                  ✨ Vibe
                 </button>
               </div>
             </div>
@@ -3830,6 +4001,22 @@ export default function EditorPage() {
                       }
                     }, 100);
                   }}
+                  hideHeader={true}
+                  onStop={handleStopEdit}
+                />
+              ) : editMode === 'structure' ? (
+                /* Structure Edit Content */
+                <StructurePanel
+                  cells={document.cells.map(c => ({ index: c.index, content: c.content, type: c.type }))}
+                  selectedIndices={Array.from(selectedCells)}
+                  documentTitle={document.title}
+                  documentGoals={undefined} // TODO: Pass document goals when available
+                  model={selectedModel || undefined}
+                  isLoading={isLoading}
+                  savedState={structureStates[document.id]}
+                  onStateChange={handleStructureStateChange}
+                  onClose={() => setShowFeedbackPanel(false)}
+                  onApplyProposals={handleApplyStructureProposals}
                   hideHeader={true}
                   onStop={handleStopEdit}
                 />

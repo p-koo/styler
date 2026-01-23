@@ -153,6 +153,24 @@ export async function PATCH(
 
     // Update adjustments if provided
     if (adjustments) {
+      // Filter out generic "improve clarity" guidance - this is default behavior
+      // Generic clarity improvements shouldn't clutter custom instructions
+      if (adjustments.additionalFramingGuidance) {
+        const LATENT_GUIDANCE = [
+          'improve clarity',
+          'clarity and readability',
+          'clear and readable',
+          'improve readability',
+          'clearer writing',
+          'make it clearer',
+          'enhance clarity',
+        ];
+        adjustments.additionalFramingGuidance = adjustments.additionalFramingGuidance.filter((g) => {
+          const lower = g.toLowerCase();
+          return !LATENT_GUIDANCE.some(latent => lower.includes(latent));
+        });
+      }
+
       // Check if we need to auto-consolidate guidance
       const newGuidance = adjustments.additionalFramingGuidance;
       if (newGuidance && newGuidance.length > CONSOLIDATION_THRESHOLD) {

@@ -193,9 +193,26 @@ export async function POST(request: NextRequest) {
             ].slice(0, 50);
           }
           if (suggested.additionalFramingGuidance) {
+            // Filter out generic "improve clarity" guidance - this is default behavior
+            // and shouldn't clutter custom instructions
+            const LATENT_GUIDANCE = [
+              'improve clarity',
+              'clarity and readability',
+              'clear and readable',
+              'improve readability',
+              'clearer writing',
+              'make it clearer',
+              'enhance clarity',
+            ];
+            const filteredGuidance = suggested.additionalFramingGuidance.filter((g) => {
+              const lower = g.toLowerCase();
+              // Reject if it's a generic clarity suggestion
+              return !LATENT_GUIDANCE.some(latent => lower.includes(latent));
+            });
+
             adj.additionalFramingGuidance = [
               ...adj.additionalFramingGuidance,
-              ...suggested.additionalFramingGuidance.filter(
+              ...filteredGuidance.filter(
                 (g) => !adj.additionalFramingGuidance.includes(g)
               ),
             ].slice(0, 20);

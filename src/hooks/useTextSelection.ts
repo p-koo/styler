@@ -20,16 +20,27 @@ export function useTextSelection(options: UseTextSelectionOptions = {}) {
   const {
     containerSelector = '[data-cell-container]',
     cellDataAttribute = 'data-cell-index',
-    preserveOnEdit = false,
   } = options;
 
   const [selection, setSelection] = useState<TextSelection | null>(null);
+  const [isLocked, setIsLocked] = useState(false); // Prevent clearing when locked (during edit)
   const isSelectingRef = useRef(false);
   const lastValidCellRef = useRef<HTMLElement | null>(null);
 
   const clearSelection = useCallback(() => {
     setSelection(null);
+    setIsLocked(false);
     lastValidCellRef.current = null;
+  }, []);
+
+  // Lock selection to prevent it from being cleared (call when edit starts)
+  const lockSelection = useCallback(() => {
+    setIsLocked(true);
+  }, []);
+
+  // Unlock selection (call when edit completes/cancels)
+  const unlockSelection = useCallback(() => {
+    setIsLocked(false);
   }, []);
 
   useEffect(() => {
@@ -171,7 +182,7 @@ export function useTextSelection(options: UseTextSelectionOptions = {}) {
       }, 10);
     };
 
-    // Clear selection when clicking outside (but not during selection)
+    // Clear selection when clicking outside (but not during selection or when locked)
     const handleClick = (e: MouseEvent) => {
       if (isSelectingRef.current) return;
 
@@ -179,6 +190,9 @@ export function useTextSelection(options: UseTextSelectionOptions = {}) {
       if (popover && popover.contains(e.target as Node)) {
         return;
       }
+
+      // Don't clear if locked (edit in progress)
+      if (isLocked) return;
 
       // If clicking and no text is selected, clear the popup
       const sel = window.getSelection();
@@ -198,7 +212,7 @@ export function useTextSelection(options: UseTextSelectionOptions = {}) {
       document.removeEventListener('click', handleClick);
       document.removeEventListener('selectionchange', handleSelectionChange);
     };
-  }, [containerSelector, cellDataAttribute]);
+  }, [containerSelector, cellDataAttribute, isLocked]);
 
-  return { selection, clearSelection };
+  return { selection, clearSelection, lockSelection, unlockSelection, isLocked };
 }

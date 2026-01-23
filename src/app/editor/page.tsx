@@ -197,7 +197,7 @@ export default function EditorPage() {
   const [showChatPanel, setShowChatPanel] = useState(false); // Chat assistant panel
 
   // Text selection for targeted editing
-  const { selection: textSelection, clearSelection: clearTextSelection } = useTextSelection({
+  const { selection: textSelection, clearSelection: clearTextSelection, lockSelection, unlockSelection } = useTextSelection({
     containerSelector: '[data-cell-container]',
     cellDataAttribute: 'data-cell-index',
   });
@@ -937,6 +937,7 @@ export default function EditorPage() {
     if (!cell) return;
 
     setIsSelectionEditing(true);
+    lockSelection(); // Prevent selection from being cleared during edit
 
     try {
       const res = await fetch('/api/document/edit-selection', {
@@ -973,10 +974,11 @@ export default function EditorPage() {
     } catch (error) {
       console.error('Selection edit failed:', error);
       showToast(error instanceof Error ? error.message : 'Selection edit failed', 'error');
+      unlockSelection(); // Unlock on error too
     } finally {
       setIsSelectionEditing(false);
     }
-  }, [textSelection, document, activeProfile, selectedModel]);
+  }, [textSelection, document, activeProfile, selectedModel, lockSelection, unlockSelection]);
 
   // Accept selection edit
   const handleSelectionEditAccept = useCallback(() => {
@@ -1004,16 +1006,18 @@ export default function EditorPage() {
 
     // Clear everything
     setSelectionEditResult(null);
+    unlockSelection();
     clearTextSelection();
     window.getSelection()?.removeAllRanges();
-  }, [selectionEditResult, document, clearTextSelection]);
+  }, [selectionEditResult, document, clearTextSelection, unlockSelection]);
 
   // Reject selection edit
   const handleSelectionEditReject = useCallback(() => {
     setSelectionEditResult(null);
+    unlockSelection();
     clearTextSelection();
     window.getSelection()?.removeAllRanges();
-  }, [clearTextSelection]);
+  }, [clearTextSelection, unlockSelection]);
 
   // Refine selection edit
   const handleSelectionEditRefine = useCallback(async (feedback: string) => {

@@ -1298,6 +1298,8 @@ export default function DocumentProfilePanel({
                         setConstraintsEditing(true);
                         setConstraintSourceText('');
                         setConstraintSourceDescription('');
+                        // Pre-populate with existing constraints so Save button shows
+                        setEditedConstraints(adjustments.documentConstraints?.constraints || []);
                       }}
                       className="flex-1 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-xs"
                     >

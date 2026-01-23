@@ -108,11 +108,11 @@
           ]
         }
       ],
-      "icon": "build/icon.png",
+      "icon": "resources/icon.png",
       "category": "public.app-category.productivity"
     },
     "dmg": {
-      "icon": "build/icon.png",
+      "icon": "resources/icon.png",
       "iconSize": 128,
       "contents": [
         { "x": 130, "y": 220 },
@@ -121,11 +121,11 @@
     },
     "win": {
       "target": "nsis",
-      "icon": "build/icon.png"
+      "icon": "resources/icon.png"
     },
     "linux": {
       "target": "AppImage",
-      "icon": "build/icon.png",
+      "icon": "resources/icon.png",
       "category": "Office"
     }
   }

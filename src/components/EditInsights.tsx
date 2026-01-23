@@ -8,7 +8,7 @@ interface AgentTraceEntry {
   timestamp: number;
   durationMs: number;
   summary: string;
-  details?: Record<string, unknown>;
+  details?: Record<string, unknown> & { prompt?: string };
 }
 
 interface ConvergenceEntry {
@@ -209,6 +209,40 @@ export default function EditInsights({ convergenceHistory, agentTrace, iteration
           <div className="text-[10px] text-slate-500 dark:text-slate-400 pt-2 border-t border-slate-200 dark:border-slate-700">
             Total processing time: {(totalDuration / 1000).toFixed(2)}s
           </div>
+
+          {/* Prompt Inspection - collapsible */}
+          <PromptInspector agentTrace={agentTrace} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PromptInspector({ agentTrace }: { agentTrace: AgentTraceEntry[] }) {
+  const [showPrompt, setShowPrompt] = useState(false);
+
+  // Find the prompt from the most recent prompt agent entry
+  const promptEntry = agentTrace.filter(t => t.agent === 'prompt').pop();
+  const prompt = promptEntry?.details?.prompt as string | undefined;
+
+  if (!prompt) return null;
+
+  return (
+    <div className="pt-2 border-t border-slate-200 dark:border-slate-700">
+      <button
+        onClick={() => setShowPrompt(!showPrompt)}
+        className="flex items-center gap-2 text-[10px] text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
+      >
+        <span>{showPrompt ? '▼' : '▶'}</span>
+        <span className="font-medium">Inspect LLM Prompt</span>
+        <span className="text-slate-400 dark:text-slate-500">({Math.round(prompt.length / 1000)}k chars)</span>
+      </button>
+
+      {showPrompt && (
+        <div className="mt-2 p-3 bg-slate-100 dark:bg-slate-950 rounded border border-slate-200 dark:border-slate-700 max-h-96 overflow-y-auto">
+          <pre className="text-[10px] text-slate-700 dark:text-slate-300 whitespace-pre-wrap font-mono leading-relaxed">
+            {prompt}
+          </pre>
         </div>
       )}
     </div>

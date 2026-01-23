@@ -1,6 +1,6 @@
 {
   "name": "styler",
-  "version": "1.2.11",
+  "version": "1.2.12",
   "description": "AI-powered document editing that learns your writing style",
   "main": "electron/main.js",
   "scripts": {

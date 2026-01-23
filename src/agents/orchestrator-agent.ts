@@ -253,7 +253,7 @@ export async function orchestrateEdit(
     const promptStartTime = Date.now();
 
     // Generate edit with current preferences
-    const editedText = await generateEdit({
+    const { editedText, prompt: llmPrompt } = await generateEdit({
       cells,
       cellIndex,
       instruction,
@@ -281,6 +281,7 @@ export async function orchestrateEdit(
         hasInstruction: !!instruction,
         hasPreviousAttempt: !!previousAttempt,
         issueCount: previousIssues?.length || 0,
+        prompt: llmPrompt, // Full prompt for inspection
       },
     });
 
@@ -445,7 +446,7 @@ async function generateEdit(params: {
   previousAttempt?: string;
   previousIssues?: CritiqueIssue[];
   userRefinementFeedback?: string;
-}): Promise<string> {
+}): Promise<{ editedText: string; prompt: string }> {
   const {
     cells,
     cellIndex,
@@ -912,7 +913,10 @@ This is a code document. You MUST:
     console.log('[Orchestrator] Final combined length:', editedText.length);
   }
 
-  return editedText;
+  // Combine system prompt and user message for debugging/inspection
+  const fullPrompt = `=== SYSTEM PROMPT ===\n${systemPrompt}\n\n=== USER MESSAGE ===\n${userMessage}`;
+
+  return { editedText, prompt: fullPrompt };
 }
 
 /**

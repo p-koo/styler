@@ -315,6 +315,8 @@ export async function clearDocumentAdjustments(
       // Preserve document goals and constraints - they should stay fixed for the document
       documentGoals: prefs.adjustments.documentGoals,
       documentConstraints: prefs.adjustments.documentConstraints,
+      // Preserve user-modified style flags - once user sets a style, it stays locked
+      styleUserModified: prefs.adjustments.styleUserModified,
     },
     editHistory: keepHistory ? prefs.editHistory : [],
     updatedAt: new Date().toISOString(),

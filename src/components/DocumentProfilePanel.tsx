@@ -147,10 +147,26 @@ export default function DocumentProfilePanel({
     }
   };
 
-  // Update slider
+  // Update slider - mark as user-modified so constraints won't override
   const updateSlider = (key: 'verbosityAdjust' | 'formalityAdjust' | 'hedgingAdjust', value: number) => {
-    setAdjustments(prev => ({ ...prev, [key]: value }));
-    saveAdjustments({ [key]: value });
+    // Map key to styleUserModified field
+    const modifiedKey = key === 'verbosityAdjust' ? 'verbosity'
+      : key === 'formalityAdjust' ? 'formality' : 'hedging';
+
+    const newStyleUserModified = {
+      ...adjustments.styleUserModified,
+      [modifiedKey]: true,
+    };
+
+    setAdjustments(prev => ({
+      ...prev,
+      [key]: value,
+      styleUserModified: newStyleUserModified,
+    }));
+    saveAdjustments({
+      [key]: value,
+      styleUserModified: newStyleUserModified,
+    });
   };
 
   // Add guidance

@@ -198,6 +198,7 @@ Return ONLY the JSON object.`;
       // Preserve document goals, constraints, and other settings
       documentGoals: currentAdj.documentGoals,
       documentConstraints: currentAdj.documentConstraints,
+      styleUserModified: currentAdj.styleUserModified,
       genAlphaMode: currentAdj.genAlphaMode,
     };
 

@@ -120,21 +120,38 @@ export async function extractConstraints(
 
 /**
  * Merge extracted constraints into existing document adjustments
+ * Respects user-modified styles - only applies constraint styles if user hasn't manually set them
  */
 export function mergeConstraintsIntoAdjustments(
   existing: DocumentAdjustments,
   constraints: ExtractedConstraints
 ): DocumentAdjustments {
-  return {
-    verbosityAdjust: existing.verbosityAdjust !== 0
+  const userModified = existing.styleUserModified || {};
+
+  // Only apply constraint-derived style if user hasn't manually modified it
+  const verbosityAdjust = userModified.verbosity
+    ? existing.verbosityAdjust  // Keep user's setting
+    : existing.verbosityAdjust !== 0
       ? (existing.verbosityAdjust + constraints.verbosityAdjust) / 2
-      : constraints.verbosityAdjust,
-    formalityAdjust: existing.formalityAdjust !== 0
+      : constraints.verbosityAdjust;
+
+  const formalityAdjust = userModified.formality
+    ? existing.formalityAdjust  // Keep user's setting
+    : existing.formalityAdjust !== 0
       ? (existing.formalityAdjust + constraints.formalityAdjust) / 2
-      : constraints.formalityAdjust,
-    hedgingAdjust: existing.hedgingAdjust !== 0
+      : constraints.formalityAdjust;
+
+  const hedgingAdjust = userModified.hedging
+    ? existing.hedgingAdjust  // Keep user's setting
+    : existing.hedgingAdjust !== 0
       ? (existing.hedgingAdjust + constraints.hedgingAdjust) / 2
-      : constraints.hedgingAdjust,
+      : constraints.hedgingAdjust;
+
+  return {
+    verbosityAdjust,
+    formalityAdjust,
+    hedgingAdjust,
+    styleUserModified: existing.styleUserModified, // Preserve user-modified flags
     additionalAvoidWords: [
       ...new Set([...existing.additionalAvoidWords, ...constraints.avoidWords]),
     ].slice(0, 100),

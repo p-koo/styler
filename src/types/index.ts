@@ -380,6 +380,14 @@ export interface DocumentAdjustments {
   formalityAdjust: number;
   hedgingAdjust: number;            // more confident ↔ more cautious
 
+  // Track which style settings were manually set by user (vs auto-derived)
+  // If user-modified, constraints/guidance won't override them
+  styleUserModified?: {
+    verbosity?: boolean;
+    formality?: boolean;
+    hedging?: boolean;
+  };
+
   // Additional avoid/prefer words learned from this document
   additionalAvoidWords: string[];
   additionalPreferWords: Record<string, string>;

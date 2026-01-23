@@ -26,6 +26,7 @@ export const DEFAULT_ADJUSTMENTS: DocumentAdjustments = {
   verbosityAdjust: 0,
   formalityAdjust: 0,
   hedgingAdjust: 0,
+  styleUserModified: undefined, // Not user-modified by default - can be set by constraints
   additionalAvoidWords: [],
   additionalPreferWords: {},
   additionalFramingGuidance: [],

@@ -655,6 +655,24 @@ This is a code document. You MUST:
     contextParts.push('');
   }
 
+  // Add external document constraints (from grant calls, style guides, etc.)
+  if (documentAdjustments?.documentConstraints?.constraints && documentAdjustments.documentConstraints.constraints.length > 0) {
+    contextParts.push('EXTERNAL CONSTRAINTS:');
+    if (documentAdjustments.documentConstraints.sourceDescription) {
+      contextParts.push(`Source: ${documentAdjustments.documentConstraints.sourceDescription}`);
+    }
+    contextParts.push('Requirements:');
+    documentAdjustments.documentConstraints.constraints.forEach((c, i) => {
+      contextParts.push(`  ${i + 1}. ${c}`);
+    });
+    if (documentAdjustments.documentConstraints.avoidWords && documentAdjustments.documentConstraints.avoidWords.length > 0) {
+      contextParts.push(`Words to avoid: ${documentAdjustments.documentConstraints.avoidWords.join(', ')}`);
+    }
+    contextParts.push('');
+    contextParts.push('IMPORTANT: All edits must comply with these external constraints.');
+    contextParts.push('');
+  }
+
   // Add section-specific guidance
   if (currentSection) {
     contextParts.push(`CURRENT SECTION: ${currentSection.name} (${currentSection.type})`);

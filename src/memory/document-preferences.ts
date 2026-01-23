@@ -312,8 +312,9 @@ export async function clearDocumentAdjustments(
     ...prefs,
     adjustments: {
       ...DEFAULT_ADJUSTMENTS,
-      // Preserve document goals - they should stay fixed for the document
+      // Preserve document goals and constraints - they should stay fixed for the document
       documentGoals: prefs.adjustments.documentGoals,
+      documentConstraints: prefs.adjustments.documentConstraints,
     },
     editHistory: keepHistory ? prefs.editHistory : [],
     updatedAt: new Date().toISOString(),

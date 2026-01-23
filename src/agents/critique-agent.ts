@@ -33,6 +33,7 @@ export const DEFAULT_ADJUSTMENTS: DocumentAdjustments = {
   editExamples: [],
   diffPatterns: [],
   documentGoals: undefined,
+  documentConstraints: undefined,
   genAlphaMode: undefined,
 };
 

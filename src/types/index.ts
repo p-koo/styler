@@ -327,6 +327,37 @@ export interface DocumentGoals {
   locked?: boolean;
 }
 
+// Document constraints from external sources (grant calls, style guides, etc.)
+export interface DocumentConstraints {
+  // Raw source text (pasted or extracted from PDF)
+  sourceText?: string;
+
+  // Source description (e.g., "NIH R01 Grant Guidelines", "Nature Style Guide")
+  sourceDescription?: string;
+
+  // Extracted/parsed constraints
+  constraints: string[];
+
+  // Style adjustments derived from constraints
+  styleAdjustments?: {
+    verbosity?: number;
+    formality?: number;
+    hedging?: number;
+  };
+
+  // Words to avoid from this source
+  avoidWords?: string[];
+
+  // Preferred terminology from this source
+  preferredTerms?: Record<string, string>;
+
+  // Last updated timestamp
+  updatedAt: string;
+
+  // Whether constraints were manually edited
+  userEdited?: boolean;
+}
+
 // Paragraph intent analysis from Intent Agent
 export interface ParagraphIntent {
   // What this paragraph is trying to accomplish
@@ -367,6 +398,9 @@ export interface DocumentAdjustments {
 
   // Document goals (synthesized by Intent Agent, editable by user)
   documentGoals?: DocumentGoals;
+
+  // Document constraints from external sources (grant calls, style guides, etc.)
+  documentConstraints?: DocumentConstraints;
 
   // Easter egg: Gen Alpha mode
   genAlphaMode?: boolean;

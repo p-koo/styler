@@ -195,8 +195,9 @@ Return ONLY the JSON object.`;
       learnedRules: newRules,
       editExamples: currentAdj.editExamples,
       diffPatterns: currentAdj.diffPatterns,
-      // Preserve document goals and other settings
+      // Preserve document goals, constraints, and other settings
       documentGoals: currentAdj.documentGoals,
+      documentConstraints: currentAdj.documentConstraints,
       genAlphaMode: currentAdj.genAlphaMode,
     };
 

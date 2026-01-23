@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { DocumentAdjustments, AudienceProfile, LearnedRule, DocumentGoals } from '@/types';
+import type { DocumentAdjustments, AudienceProfile, LearnedRule, DocumentGoals, DocumentConstraints } from '@/types';
 
 interface DocumentProfilePanelProps {
   documentId: string;
@@ -22,7 +22,7 @@ const DEFAULT_ADJUSTMENTS: DocumentAdjustments = {
   learnedRules: [],
 };
 
-type TabType = 'style' | 'guidance' | 'goals' | 'import';
+type TabType = 'style' | 'guidance' | 'goals' | 'constraints';
 
 /**
  * Global document profile panel - comprehensive document-specific preferences
@@ -76,21 +76,13 @@ export default function DocumentProfilePanel({
     if (storedModel) setSelectedModel(storedModel);
   }, []);
 
-  // For import constraints
-  const [importText, setImportText] = useState('');
-  const [importing, setImporting] = useState(false);
+  // For constraints tab
+  const [constraintsEditing, setConstraintsEditing] = useState(false);
+  const [constraintSourceText, setConstraintSourceText] = useState('');
+  const [constraintSourceDescription, setConstraintSourceDescription] = useState('');
+  const [editedConstraints, setEditedConstraints] = useState<string[]>([]);
+  const [extractingConstraints, setExtractingConstraints] = useState(false);
   const [consolidating, setConsolidating] = useState(false);
-  const [importPreview, setImportPreview] = useState<{
-    verbosityAdjust: number;
-    formalityAdjust: number;
-    hedgingAdjust: number;
-    avoidWords: string[];
-    preferWords: Record<string, string>;
-    framingGuidance: string[];
-    rules: string[];
-    summary: string;
-  } | null>(null);
-  const [showImportPreview, setShowImportPreview] = useState(false);
 
   // Load preferences
   // Track if we're currently analyzing goals or saving (to prevent polling overwrites)
@@ -300,21 +292,21 @@ export default function DocumentProfilePanel({
     }
   };
 
-  // Extract constraints from text
-  const handleExtractConstraints = async (preview = false) => {
-    if (!importText.trim() || importText.trim().length < 50) {
+  // Extract constraints from text (or PDF content)
+  const handleExtractConstraints = async () => {
+    if (!constraintSourceText.trim() || constraintSourceText.trim().length < 50) {
       alert('Please provide at least 50 characters of text to analyze');
       return;
     }
 
-    setImporting(true);
+    setExtractingConstraints(true);
     try {
       const res = await fetch(`/api/documents/${documentId}/extract-constraints`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          text: importText,
-          merge: !preview,
+          text: constraintSourceText,
+          sourceDescription: constraintSourceDescription,
           model: selectedModel,
         }),
       });
@@ -322,32 +314,64 @@ export default function DocumentProfilePanel({
 
       if (!res.ok) throw new Error(data.error);
 
-      if (preview) {
-        setImportPreview(data.extracted);
-        setShowImportPreview(true);
-      } else {
-        // Constraints were merged
-        if (data.preferences) {
-          setAdjustments(data.preferences.adjustments);
-          setLastUpdated(new Date().toISOString());
-        }
-        setImportText('');
-        setImportPreview(null);
-        setShowImportPreview(false);
-        setActiveTab('guidance');
-        alert(`Extracted and merged: ${data.extracted.summary}`);
-      }
+      // Build the DocumentConstraints object
+      const newConstraints: DocumentConstraints = {
+        sourceText: constraintSourceText,
+        sourceDescription: constraintSourceDescription || undefined,
+        constraints: data.extracted?.framingGuidance || [],
+        styleAdjustments: {
+          verbosity: data.extracted?.verbosityAdjust || 0,
+          formality: data.extracted?.formalityAdjust || 0,
+          hedging: data.extracted?.hedgingAdjust || 0,
+        },
+        avoidWords: data.extracted?.avoidWords || [],
+        preferredTerms: data.extracted?.preferWords || {},
+        updatedAt: new Date().toISOString(),
+      };
+
+      // Save to document preferences
+      await saveAdjustments({ documentConstraints: newConstraints });
+      setAdjustments(prev => ({ ...prev, documentConstraints: newConstraints }));
+      setConstraintsEditing(false);
+      setConstraintSourceText('');
+      setConstraintSourceDescription('');
+      setLastUpdated(new Date().toISOString());
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to extract constraints');
     } finally {
-      setImporting(false);
+      setExtractingConstraints(false);
     }
   };
 
-  // Apply previewed constraints
-  const handleApplyPreview = async () => {
-    if (!importPreview) return;
-    await handleExtractConstraints(false);
+  // Save edited constraints manually
+  const handleSaveConstraints = async () => {
+    const updatedConstraints: DocumentConstraints = {
+      ...adjustments.documentConstraints,
+      constraints: editedConstraints,
+      updatedAt: new Date().toISOString(),
+      userEdited: true,
+    };
+
+    await saveAdjustments({ documentConstraints: updatedConstraints });
+    setAdjustments(prev => ({ ...prev, documentConstraints: updatedConstraints }));
+    setConstraintsEditing(false);
+    setEditedConstraints([]);
+    setLastUpdated(new Date().toISOString());
+  };
+
+  // Start editing constraints
+  const startEditingConstraints = () => {
+    setEditedConstraints(adjustments.documentConstraints?.constraints || []);
+    setConstraintsEditing(true);
+  };
+
+  // Clear all constraints
+  const handleClearConstraints = async () => {
+    if (!confirm('Clear all constraints? This cannot be undone.')) return;
+    await saveAdjustments({ documentConstraints: undefined });
+    setAdjustments(prev => ({ ...prev, documentConstraints: undefined }));
+    setConstraintsEditing(false);
+    setLastUpdated(new Date().toISOString());
   };
 
   // Analyze document goals
@@ -515,22 +539,45 @@ export default function DocumentProfilePanel({
     }
   };
 
-  // Handle file upload (PDF text extraction)
+  // Handle file upload (PDF or text)
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // For now, only support text files. PDF would require additional library.
+    // Handle text files directly
     if (file.type === 'text/plain' || file.name.endsWith('.txt') || file.name.endsWith('.md')) {
       const text = await file.text();
-      setImportText(text);
+      setConstraintSourceText(text);
+      setConstraintSourceDescription(file.name);
     } else if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
-      alert('PDF upload coming soon. For now, please copy and paste the text content.');
+      // Send PDF to server for parsing
+      setExtractingConstraints(true);
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('model', selectedModel);
+
+        const res = await fetch('/api/document/parse', {
+          method: 'POST',
+          body: formData,
+        });
+        const data = await res.json();
+
+        if (!res.ok) throw new Error(data.error);
+
+        setConstraintSourceText(data.text || '');
+        setConstraintSourceDescription(file.name);
+      } catch (err) {
+        alert(err instanceof Error ? err.message : 'Failed to parse PDF');
+      } finally {
+        setExtractingConstraints(false);
+      }
     } else {
       // Try to read as text anyway
       try {
         const text = await file.text();
-        setImportText(text);
+        setConstraintSourceText(text);
+        setConstraintSourceDescription(file.name);
       } catch {
         alert('Could not read file. Please paste the text content instead.');
       }
@@ -604,7 +651,7 @@ export default function DocumentProfilePanel({
 
       {/* Tabs */}
       <div className="flex border-b border-[var(--border)]">
-        {(['style', 'guidance', 'goals', 'import'] as TabType[]).map(tab => (
+        {(['style', 'guidance', 'goals', 'constraints'] as TabType[]).map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -1055,152 +1102,216 @@ export default function DocumentProfilePanel({
           </div>
         )}
 
-        {/* Import Tab */}
-        {activeTab === 'import' && (
+        {/* Constraints Tab */}
+        {activeTab === 'constraints' && (
           <div className="space-y-4">
             <div>
-              <h4 className="text-xs font-medium mb-2">Import Requirements</h4>
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-xs font-medium">External Constraints</h4>
+                {adjustments.documentConstraints?.userEdited && (
+                  <span className="text-[9px] px-1.5 py-0.5 bg-blue-100 text-blue-600 rounded">Edited</span>
+                )}
+              </div>
               <p className="text-[10px] text-[var(--muted-foreground)] mb-3">
-                Paste text from a grant call, style guide, or submission requirements.
-                AI will extract constraints and merge them into this document's profile.
+                Import requirements from grant calls, style guides, or submission guidelines.
+                Constraints are saved with this document and guide all edits.
               </p>
 
-              {/* File upload */}
-              <div className="mb-3">
-                <label className="flex items-center justify-center gap-2 px-3 py-2 border border-dashed border-[var(--border)] rounded-lg cursor-pointer hover:bg-[var(--muted)]/50 transition-colors">
-                  <span className="text-xs">Upload .txt or .md file</span>
-                  <input
-                    type="file"
-                    accept=".txt,.md,text/plain"
-                    onChange={handleFileUpload}
-                    className="hidden"
-                  />
-                </label>
-              </div>
+              {constraintsEditing ? (
+                /* Editing mode - add new or edit existing constraints */
+                <div className="space-y-3">
+                  {/* Source description */}
+                  <div>
+                    <label className="text-[10px] font-medium mb-1 block">Source (optional)</label>
+                    <input
+                      type="text"
+                      value={constraintSourceDescription}
+                      onChange={e => setConstraintSourceDescription(e.target.value)}
+                      placeholder="e.g., NIH R01 Guidelines, Nature Style Guide..."
+                      className="w-full px-2 py-1.5 text-xs border border-[var(--border)] rounded bg-[var(--background)]"
+                    />
+                  </div>
 
-              {/* Text input */}
-              <textarea
-                value={importText}
-                onChange={e => setImportText(e.target.value)}
-                placeholder="Paste requirements text here (e.g., R01 grant call, submission guidelines, style requirements...)"
-                className="w-full h-40 px-2 py-2 text-xs border border-[var(--border)] rounded-lg bg-[var(--background)] resize-none"
-              />
+                  {/* File upload */}
+                  <div>
+                    <label className="flex items-center justify-center gap-2 px-3 py-2 border border-dashed border-[var(--border)] rounded-lg cursor-pointer hover:bg-[var(--muted)]/50 transition-colors">
+                      <span className="text-xs">{extractingConstraints ? 'Parsing...' : 'Upload PDF or text file'}</span>
+                      <input
+                        type="file"
+                        accept=".pdf,.txt,.md,text/plain,application/pdf"
+                        onChange={handleFileUpload}
+                        disabled={extractingConstraints}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
 
-              {/* Character count */}
-              <div className="text-[10px] text-[var(--muted-foreground)] mt-1">
-                {importText.length} characters {importText.length < 50 && importText.length > 0 && '(minimum 50)'}
-              </div>
-            </div>
+                  {/* Text input */}
+                  <div>
+                    <label className="text-[10px] font-medium mb-1 block">Requirements text</label>
+                    <textarea
+                      value={constraintSourceText}
+                      onChange={e => setConstraintSourceText(e.target.value)}
+                      placeholder="Paste requirements text here..."
+                      className="w-full h-32 px-2 py-2 text-xs border border-[var(--border)] rounded-lg bg-[var(--background)] resize-none"
+                    />
+                    <div className="text-[10px] text-[var(--muted-foreground)] mt-1">
+                      {constraintSourceText.length} characters {constraintSourceText.length < 50 && constraintSourceText.length > 0 && '(minimum 50)'}
+                    </div>
+                  </div>
 
-            {/* Action buttons */}
-            <div className="flex gap-2">
-              <button
-                onClick={() => handleExtractConstraints(true)}
-                disabled={importing || importText.trim().length < 50}
-                className="flex-1 py-2 border border-[var(--border)] rounded-lg hover:bg-[var(--muted)] text-xs disabled:opacity-50"
-              >
-                {importing ? 'Analyzing...' : 'Preview'}
-              </button>
-              <button
-                onClick={() => handleExtractConstraints(false)}
-                disabled={importing || importText.trim().length < 50}
-                className="flex-1 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-xs disabled:opacity-50"
-              >
-                {importing ? 'Importing...' : 'Import & Merge'}
-              </button>
-            </div>
+                  {/* Edit existing constraints if any */}
+                  {editedConstraints.length > 0 && (
+                    <div>
+                      <label className="text-[10px] font-medium mb-1 block">Extracted constraints</label>
+                      <textarea
+                        value={editedConstraints.join('\n')}
+                        onChange={e => setEditedConstraints(e.target.value.split('\n').filter(c => c.trim()))}
+                        placeholder="One constraint per line..."
+                        className="w-full h-24 px-2 py-2 text-xs border border-[var(--border)] rounded-lg bg-[var(--background)] resize-none font-mono"
+                      />
+                    </div>
+                  )}
 
-            {/* Preview Modal */}
-            {showImportPreview && importPreview && (
-              <div className="mt-4 p-3 bg-[var(--muted)]/30 rounded-lg space-y-3">
-                <div className="flex items-center justify-between">
-                  <h5 className="text-xs font-medium">Extraction Preview</h5>
+                  {/* Action buttons */}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        setConstraintsEditing(false);
+                        setConstraintSourceText('');
+                        setConstraintSourceDescription('');
+                        setEditedConstraints([]);
+                      }}
+                      className="flex-1 py-2 border border-[var(--border)] rounded-lg hover:bg-[var(--muted)] text-xs"
+                    >
+                      Cancel
+                    </button>
+                    {constraintSourceText.length >= 50 ? (
+                      <button
+                        onClick={handleExtractConstraints}
+                        disabled={extractingConstraints}
+                        className="flex-1 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-xs disabled:opacity-50"
+                      >
+                        {extractingConstraints ? 'Extracting...' : 'Extract & Save'}
+                      </button>
+                    ) : editedConstraints.length > 0 ? (
+                      <button
+                        onClick={handleSaveConstraints}
+                        className="flex-1 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-xs"
+                      >
+                        Save Constraints
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              ) : adjustments.documentConstraints?.constraints && adjustments.documentConstraints.constraints.length > 0 ? (
+                /* Display mode - show saved constraints */
+                <div className="space-y-3">
+                  {adjustments.documentConstraints.sourceDescription && (
+                    <div className="p-2 bg-[var(--muted)]/30 rounded-lg">
+                      <div className="text-[10px] font-medium text-purple-600">Source</div>
+                      <p className="text-xs">{adjustments.documentConstraints.sourceDescription}</p>
+                    </div>
+                  )}
+
+                  <div className="p-3 bg-[var(--muted)]/30 rounded-lg">
+                    <div className="text-[10px] font-medium text-purple-600 mb-2">
+                      Constraints ({adjustments.documentConstraints.constraints.length})
+                    </div>
+                    <ul className="space-y-1">
+                      {adjustments.documentConstraints.constraints.map((c, i) => (
+                        <li key={i} className="text-xs text-[var(--foreground)] flex items-start gap-2">
+                          <span className="text-purple-500">•</span>
+                          {c}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  {/* Style adjustments from constraints */}
+                  {adjustments.documentConstraints.styleAdjustments && (
+                    <div className="grid grid-cols-3 gap-2 text-[10px]">
+                      {adjustments.documentConstraints.styleAdjustments.verbosity !== 0 && (
+                        <div className="p-2 bg-[var(--muted)]/30 rounded text-center">
+                          <div className="font-medium">Verbosity</div>
+                          <div className={adjustments.documentConstraints.styleAdjustments.verbosity! > 0 ? 'text-blue-600' : 'text-orange-600'}>
+                            {adjustments.documentConstraints.styleAdjustments.verbosity! > 0 ? '+' : ''}{adjustments.documentConstraints.styleAdjustments.verbosity}
+                          </div>
+                        </div>
+                      )}
+                      {adjustments.documentConstraints.styleAdjustments.formality !== 0 && (
+                        <div className="p-2 bg-[var(--muted)]/30 rounded text-center">
+                          <div className="font-medium">Formality</div>
+                          <div className={adjustments.documentConstraints.styleAdjustments.formality! > 0 ? 'text-blue-600' : 'text-orange-600'}>
+                            {adjustments.documentConstraints.styleAdjustments.formality! > 0 ? '+' : ''}{adjustments.documentConstraints.styleAdjustments.formality}
+                          </div>
+                        </div>
+                      )}
+                      {adjustments.documentConstraints.styleAdjustments.hedging !== 0 && (
+                        <div className="p-2 bg-[var(--muted)]/30 rounded text-center">
+                          <div className="font-medium">Hedging</div>
+                          <div className={adjustments.documentConstraints.styleAdjustments.hedging! > 0 ? 'text-blue-600' : 'text-orange-600'}>
+                            {adjustments.documentConstraints.styleAdjustments.hedging! > 0 ? '+' : ''}{adjustments.documentConstraints.styleAdjustments.hedging}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Avoid words */}
+                  {adjustments.documentConstraints.avoidWords && adjustments.documentConstraints.avoidWords.length > 0 && (
+                    <div>
+                      <div className="text-[10px] font-medium mb-1">Words to Avoid</div>
+                      <div className="flex flex-wrap gap-1">
+                        {adjustments.documentConstraints.avoidWords.map((word, i) => (
+                          <span key={i} className="px-1.5 py-0.5 bg-red-50 text-red-600 text-[9px] rounded">{word}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex gap-2">
+                    <button
+                      onClick={startEditingConstraints}
+                      className="flex-1 py-2 border border-[var(--border)] rounded-lg hover:bg-[var(--muted)] text-xs"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => {
+                        setConstraintsEditing(true);
+                        setConstraintSourceText('');
+                        setConstraintSourceDescription('');
+                      }}
+                      className="flex-1 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-xs"
+                    >
+                      Add More
+                    </button>
+                    <button
+                      onClick={handleClearConstraints}
+                      className="px-3 py-2 border border-red-200 text-red-600 rounded-lg hover:bg-red-50 text-xs"
+                      title="Clear all constraints"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* No constraints yet */
+                <div className="text-center py-6">
+                  <div className="text-3xl mb-2">📋</div>
+                  <p className="text-xs text-[var(--muted-foreground)] mb-4">
+                    No constraints defined. Import requirements from grant calls, style guides, or submission guidelines.
+                  </p>
                   <button
-                    onClick={() => { setShowImportPreview(false); setImportPreview(null); }}
-                    className="text-xs hover:text-[var(--foreground)]"
+                    onClick={() => setConstraintsEditing(true)}
+                    className="py-2 px-4 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-xs"
                   >
-                    ×
+                    Add Constraints
                   </button>
                 </div>
-
-                <p className="text-[10px] text-[var(--muted-foreground)] italic">
-                  {importPreview.summary}
-                </p>
-
-                {/* Style adjustments */}
-                <div className="grid grid-cols-3 gap-2 text-[10px]">
-                  <div className="p-2 bg-[var(--background)] rounded text-center">
-                    <div className="font-medium">Verbosity</div>
-                    <div className={importPreview.verbosityAdjust > 0 ? 'text-blue-600' : importPreview.verbosityAdjust < 0 ? 'text-orange-600' : ''}>
-                      {importPreview.verbosityAdjust > 0 ? '+' : ''}{importPreview.verbosityAdjust}
-                    </div>
-                  </div>
-                  <div className="p-2 bg-[var(--background)] rounded text-center">
-                    <div className="font-medium">Formality</div>
-                    <div className={importPreview.formalityAdjust > 0 ? 'text-blue-600' : importPreview.formalityAdjust < 0 ? 'text-orange-600' : ''}>
-                      {importPreview.formalityAdjust > 0 ? '+' : ''}{importPreview.formalityAdjust}
-                    </div>
-                  </div>
-                  <div className="p-2 bg-[var(--background)] rounded text-center">
-                    <div className="font-medium">Hedging</div>
-                    <div className={importPreview.hedgingAdjust > 0 ? 'text-blue-600' : importPreview.hedgingAdjust < 0 ? 'text-orange-600' : ''}>
-                      {importPreview.hedgingAdjust > 0 ? '+' : ''}{importPreview.hedgingAdjust}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Extracted items */}
-                {importPreview.avoidWords.length > 0 && (
-                  <div>
-                    <div className="text-[10px] font-medium mb-1">Words to Avoid ({importPreview.avoidWords.length})</div>
-                    <div className="flex flex-wrap gap-1">
-                      {importPreview.avoidWords.slice(0, 10).map((word, i) => (
-                        <span key={i} className="px-1.5 py-0.5 bg-red-50 text-red-600 text-[9px] rounded">{word}</span>
-                      ))}
-                      {importPreview.avoidWords.length > 10 && (
-                        <span className="text-[9px] text-[var(--muted-foreground)]">+{importPreview.avoidWords.length - 10} more</span>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {importPreview.framingGuidance.length > 0 && (
-                  <div>
-                    <div className="text-[10px] font-medium mb-1">Framing Guidance ({importPreview.framingGuidance.length})</div>
-                    <ul className="space-y-0.5">
-                      {importPreview.framingGuidance.slice(0, 5).map((g, i) => (
-                        <li key={i} className="text-[9px] text-blue-700 bg-blue-50 p-1 rounded">{g}</li>
-                      ))}
-                      {importPreview.framingGuidance.length > 5 && (
-                        <li className="text-[9px] text-[var(--muted-foreground)]">+{importPreview.framingGuidance.length - 5} more</li>
-                      )}
-                    </ul>
-                  </div>
-                )}
-
-                {importPreview.rules.length > 0 && (
-                  <div>
-                    <div className="text-[10px] font-medium mb-1">Rules ({importPreview.rules.length})</div>
-                    <ul className="space-y-0.5">
-                      {importPreview.rules.slice(0, 5).map((r, i) => (
-                        <li key={i} className="text-[9px] text-purple-700 bg-purple-50 p-1 rounded">• {r}</li>
-                      ))}
-                      {importPreview.rules.length > 5 && (
-                        <li className="text-[9px] text-[var(--muted-foreground)]">+{importPreview.rules.length - 5} more</li>
-                      )}
-                    </ul>
-                  </div>
-                )}
-
-                <button
-                  onClick={handleApplyPreview}
-                  disabled={importing}
-                  className="w-full py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-xs disabled:opacity-50"
-                >
-                  {importing ? 'Applying...' : 'Apply These Constraints'}
-                </button>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         )}
       </div>

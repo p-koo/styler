@@ -10,7 +10,7 @@
  */
 
 import { createProvider, getDefaultProviderConfig } from '@/providers/base';
-import type { DocumentGoals, ParagraphIntent } from '@/types';
+import type { DocumentGoals, ParagraphIntent, DocumentConstraints } from '@/types';
 
 /**
  * Analyze a paragraph's intent within the context of document goals
@@ -22,6 +22,7 @@ export async function analyzeIntent(params: {
   sectionName?: string;
   sectionPurpose?: string;
   documentGoals?: DocumentGoals;
+  documentConstraints?: DocumentConstraints;
   documentTitle?: string;
   model?: string;
 }): Promise<ParagraphIntent> {
@@ -32,6 +33,7 @@ export async function analyzeIntent(params: {
     sectionName,
     sectionPurpose,
     documentGoals,
+    documentConstraints,
     documentTitle,
     model,
   } = params;
@@ -52,12 +54,23 @@ ${documentGoals.audienceNeeds ? `Audience Needs: ${documentGoals.audienceNeeds}`
 `;
   }
 
+  // Build context about external constraints
+  let constraintsContext = '';
+  if (documentConstraints?.constraints && documentConstraints.constraints.length > 0) {
+    constraintsContext = `
+EXTERNAL CONSTRAINTS:${documentConstraints.sourceDescription ? `\nSource: ${documentConstraints.sourceDescription}` : ''}
+Requirements:
+${documentConstraints.constraints.map((c, i) => `  ${i + 1}. ${c}`).join('\n')}
+`;
+  }
+
   const prompt = `You are an Intent Analysis Agent. Analyze the purpose of a paragraph within its document context.
 
 ${documentTitle ? `DOCUMENT: ${documentTitle}` : ''}
 ${sectionName ? `SECTION: ${sectionName}` : ''}
 ${sectionPurpose ? `SECTION PURPOSE: ${sectionPurpose}` : ''}
 ${goalsContext}
+${constraintsContext}
 
 ${previousParagraph ? `PREVIOUS PARAGRAPH:\n${previousParagraph.slice(0, 300)}${previousParagraph.length > 300 ? '...' : ''}\n` : ''}
 

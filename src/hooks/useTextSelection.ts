@@ -13,22 +13,38 @@ export interface TextSelection {
 interface UseTextSelectionOptions {
   containerSelector?: string; // CSS selector for the container to watch
   cellDataAttribute?: string; // Data attribute to identify cells (e.g., 'data-cell-index')
+  preserveOnEdit?: boolean; // Keep selection visible when there's an edit result
 }
 
 export function useTextSelection(options: UseTextSelectionOptions = {}) {
   const {
     containerSelector = '[data-cell-container]',
     cellDataAttribute = 'data-cell-index',
+    preserveOnEdit = false,
   } = options;
 
   const [selection, setSelection] = useState<TextSelection | null>(null);
   const isSelectingRef = useRef(false);
+  const lastValidCellRef = useRef<HTMLElement | null>(null);
 
   const clearSelection = useCallback(() => {
     setSelection(null);
+    lastValidCellRef.current = null;
   }, []);
 
   useEffect(() => {
+    // Find the cell element containing a node
+    const findCellElement = (node: Node): HTMLElement | null => {
+      let current: Node | null = node;
+      while (current) {
+        if (current instanceof HTMLElement && current.hasAttribute(cellDataAttribute)) {
+          return current;
+        }
+        current = current.parentNode;
+      }
+      return null;
+    };
+
     const checkSelection = () => {
       const sel = window.getSelection();
 
@@ -46,18 +62,6 @@ export function useTextSelection(options: UseTextSelectionOptions = {}) {
       if (!anchorNode || !focusNode) {
         return null;
       }
-
-      // Find the cell element containing the selection
-      const findCellElement = (node: Node): HTMLElement | null => {
-        let current: Node | null = node;
-        while (current) {
-          if (current instanceof HTMLElement && current.hasAttribute(cellDataAttribute)) {
-            return current;
-          }
-          current = current.parentNode;
-        }
-        return null;
-      };
 
       const anchorCell = findCellElement(anchorNode);
       const focusCell = findCellElement(focusNode);
@@ -120,9 +124,35 @@ export function useTextSelection(options: UseTextSelectionOptions = {}) {
       };
     };
 
-    const handleMouseDown = () => {
+    const handleMouseDown = (e: MouseEvent) => {
       // User started selecting - don't show popup yet
       isSelectingRef.current = true;
+
+      // Track which cell the selection started in
+      const target = e.target as Node;
+      const startCell = findCellElement(target);
+      lastValidCellRef.current = startCell;
+    };
+
+    // Handle selection change during drag - clear if crossing cells
+    const handleSelectionChange = () => {
+      if (!isSelectingRef.current) return;
+
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed) return;
+
+      const anchorNode = sel.anchorNode;
+      const focusNode = sel.focusNode;
+      if (!anchorNode || !focusNode) return;
+
+      const anchorCell = findCellElement(anchorNode);
+      const focusCell = findCellElement(focusNode);
+
+      // If selection crosses cells, clear the browser selection immediately
+      if (anchorCell && focusCell && anchorCell !== focusCell) {
+        sel.removeAllRanges();
+        lastValidCellRef.current = null;
+      }
     };
 
     const handleMouseUp = (e: MouseEvent) => {
@@ -160,11 +190,13 @@ export function useTextSelection(options: UseTextSelectionOptions = {}) {
     document.addEventListener('mousedown', handleMouseDown);
     document.addEventListener('mouseup', handleMouseUp);
     document.addEventListener('click', handleClick);
+    document.addEventListener('selectionchange', handleSelectionChange);
 
     return () => {
       document.removeEventListener('mousedown', handleMouseDown);
       document.removeEventListener('mouseup', handleMouseUp);
       document.removeEventListener('click', handleClick);
+      document.removeEventListener('selectionchange', handleSelectionChange);
     };
   }, [containerSelector, cellDataAttribute]);
 
